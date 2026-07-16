@@ -1,0 +1,80 @@
+type: "object"
+merge: "append"
+keys:
+  data:
+    type: "object"
+    merge: "append"
+    keys:
+      user:
+        type: "object"
+        merge: "append"
+        id: "name"
+        keys:
+          name:
+            type: "string"
+          email:
+            type: "string"
+  environment:
+    type: "object"
+    merge: "append"
+    keys:
+      packages:
+        type: "list"
+        merge: "append"
+        id: "name"
+        value:
+          type: "tagged_union"
+          merge: "override"
+          tag:
+            name: "kind"
+            options:
+              brew:
+              cask:
+              custom:
+                files:
+                  type: "list"
+                  merge: "append"
+                  value:
+                    type: "string"
+              mise:
+                version:
+                  type: "union"
+                  merge: "override"
+                  value:
+                    - type: "string"
+                    - type: "map"
+                      merge: "override"
+                      value:
+                        type: "any"
+            keys:
+              name:
+                type: "string"
+              shell:
+                type: "string"
+      shell:
+        type: "object"
+        merge: "append"
+        keys:
+          aliases:
+            type: "map"
+            merge: "append"
+            value:
+              type: "string"
+          abbreviations:
+            type: "map"
+            merge: "append"
+            value:
+              type: "string"
+          config:
+            type: "list"
+            merge: "append"
+            value:
+              type: "string"
+  modules:
+    type: "map"
+    merge: "append"
+    value:
+      type: "map"
+      merge: "append"
+      value:
+        type: "any"

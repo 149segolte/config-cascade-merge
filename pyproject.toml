@@ -1,9 +1,18 @@
 [project]
 name = "config-merger"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deterministic recursive merging of structured dicts via a YAML schema."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "pyyaml>=6.0.3",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

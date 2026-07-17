@@ -7,20 +7,25 @@ from pathlib import Path
 
 import yaml
 
-from utils import parse_schema
+from utils import SchemaError, load_schema_yaml, parse_schema
 
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
 
 
 def run(base_path: Path, overlays_dir: Path) -> None:
     base = base_path.read_text()
-    base = yaml.safe_load(base)
+    base = load_schema_yaml(base, file_name=base_path)
+    if base is None:
+        logging.info("base config is empty, exiting.")
+        return
 
     try:
         base = parse_schema(base)
-    except (TypeError, ValueError) as e:
-        logging.error(f"failed to parse base config: {e}")
+    except SchemaError as e:
+        logging.error(e)
         sys.exit(1)
+
+    logging.debug(f"base config: {base}")
 
     overlays = list(overlays_dir.glob("*.yaml"))
     logging.debug(overlays)

@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast, get_args
 
+from .schema_loader import SchemaLocation, field_location, item_location, node_location
+
 # ---------------------------------------------------------------------------
 # Type constants
 # ---------------------------------------------------------------------------
@@ -25,6 +27,34 @@ _VALID_COMPOUND_TYPES = get_args(COMPOUND_TYPES)
 _VALID_TYPES = _VALID_PRIMITIVE_TYPES + _VALID_COMPOUND_TYPES
 
 _VALID_MERGE_POLICIES = get_args(MERGE_POLICIES)
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class SchemaError(Exception):
+    """Raised when a schema config is structurally invalid."""
+
+    def __init__(self, message: str, location: SchemaLocation | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.location = location
+
+    def __str__(self) -> str:
+        if self.location is None:
+            return self.message
+
+        file_name = self.location.file_name
+        line_number = self.location.line_number
+        if file_name is not None and line_number is not None:
+            return f"{file_name}:{line_number}: {self.message}"
+        if line_number is not None:
+            return f"line {line_number}: {self.message}"
+        if file_name is not None:
+            return f"{file_name}: {self.message}"
+        return self.message
+
 
 # ---------------------------------------------------------------------------
 # Schema node dataclasses
@@ -118,44 +148,60 @@ SchemaNode = (
 # ---------------------------------------------------------------------------
 
 # Registry of dispatch functions for compound node types (verified after handler declarations)
-_dispatch: dict[COMPOUND_TYPES, Callable[[Any, str], SchemaNode]] = {}
+_dispatch: dict[
+    COMPOUND_TYPES, Callable[[dict, SchemaLocation | None], SchemaNode]
+] = {}
 
 
-def parse_schema(config: Any, path: str = "") -> SchemaNode:
+def parse_schema(
+    config: Any,
+    path: str = "",
+    location: SchemaLocation | None = None,
+) -> SchemaNode:
     """Parse and normalise a raw config dict into a SchemaNode tree.
 
     Args:
         config: Raw dict loaded from YAML (or a sub-section thereof).
-        path:   Dot-separated path string used in error messages.
+        path: Deprecated. Kept for compatibility; error messages use source
+            locations instead of schema paths.
+        location: Source location to use when `config` has no YAML metadata.
 
     Returns:
         A fully normalised SchemaNode.
 
     Raises:
-        TypeError:        Input data does not match the any expected type.
-        ValueError:       Input data does not match the expected schema for this type.
+        SchemaError: Input data is not a valid schema.
     """
+    del path
+
+    node_loc = node_location(config, location)
     if not isinstance(config, dict):
-        raise TypeError(
-            f"Schema node must be a mapping, got {type(config).__name__!r} at `{path or '.'}`"
+        raise SchemaError(
+            f"Schema node must be a mapping, got {type(config).__name__!r}",
+            node_loc,
         )
 
     node_type = config.get("type")
     if node_type is None:
-        raise TypeError(f"Missing required 'type' string field at `{path or '.'}`")
+        raise SchemaError(
+            "Missing required 'type' string field",
+            field_location(config, "type", node_loc),
+        )
     if not isinstance(node_type, str):
-        raise TypeError(
-            f"'type' must be a string, got {type(node_type).__name__!r} at `{path}.type`"
+        raise SchemaError(
+            f"'type' must be a string, got {type(node_type).__name__!r}",
+            field_location(config, "type", node_loc),
         )
     if node_type not in _VALID_TYPES:
-        raise ValueError(
-            f"Unknown type string {node_type!r} at `{path}.type`; valid types: {_VALID_TYPES}"
+        raise SchemaError(
+            f"Unknown type string {node_type!r}; valid types: {_VALID_TYPES}",
+            field_location(config, "type", node_loc),
         )
 
     if node_type in _VALID_PRIMITIVE_TYPES:
         return PrimitiveNode(type=cast(PRIMITIVE_TYPES, node_type))
 
-    return _dispatch[cast(COMPOUND_TYPES, node_type)](config, path)
+    return _dispatch[cast(COMPOUND_TYPES, node_type)](config, node_loc)
 
 
 # ---------------------------------------------------------------------------
@@ -164,50 +210,63 @@ def parse_schema(config: Any, path: str = "") -> SchemaNode:
 
 
 def _parse_merge_policy(
-    config: dict, path: str, default: MERGE_POLICIES = "append"
+    config: dict,
+    location: SchemaLocation | None,
+    default: MERGE_POLICIES = "append",
 ) -> MERGE_POLICIES:
     policy = config.get("merge")
     if policy is None:
         return default
 
+    policy_location = field_location(config, "merge", location)
     if not isinstance(policy, str):
-        raise TypeError(
-            f"'merge' must be a string, got {type(policy).__name__!r} at `{path}.merge`"
+        raise SchemaError(
+            f"'merge' must be a string, got {type(policy).__name__!r}",
+            policy_location,
         )
     if policy not in _VALID_MERGE_POLICIES:
-        raise ValueError(
-            f"'merge' must be one of {_VALID_MERGE_POLICIES}, got {policy!r} at `{path}.merge`"
+        raise SchemaError(
+            f"'merge' must be one of {_VALID_MERGE_POLICIES}, got {policy!r}",
+            policy_location,
         )
     return cast(MERGE_POLICIES, policy)
 
 
-def _parse_id(config: dict, path: str) -> str | None:
+def _parse_id(config: dict, location: SchemaLocation | None) -> str | None:
     id_field = config.get("id")
     if id_field is None:
         return None
 
+    id_location = field_location(config, "id", location)
     if not isinstance(id_field, str):
-        raise TypeError(
-            f"'id' must be a string, got {type(id_field).__name__!r} at `{path}.id`"
+        raise SchemaError(
+            f"'id' must be a string, got {type(id_field).__name__!r}",
+            id_location,
         )
     if id_field == "":
-        raise ValueError(
-            f"if provided 'id' must not be empty, got {id_field!r} at `{path}.id`"
+        raise SchemaError(
+            f"if provided 'id' must not be empty, got {id_field!r}",
+            id_location,
         )
     return id_field
 
 
-def _parse_keys(config: dict, parent_path: str) -> dict[str, SchemaNode]:
+def _parse_keys(config: dict, location: SchemaLocation | None) -> dict[str, SchemaNode]:
     raw_keys = config.get("keys")
     if raw_keys is None:
         return {}
 
+    keys_location = field_location(config, "keys", location)
     if not isinstance(raw_keys, dict):
-        raise TypeError(
-            f"'keys' must be a mapping, got {type(raw_keys).__name__!r} at `{parent_path}.keys`"
+        raise SchemaError(
+            f"'keys' must be a mapping, got {type(raw_keys).__name__!r}",
+            keys_location,
         )
     return {
-        name: parse_schema(sub, path=f"{parent_path}.keys.{name}")
+        name: parse_schema(
+            sub,
+            location=field_location(raw_keys, name, keys_location),
+        )
         for name, sub in raw_keys.items()
     }
 
@@ -217,10 +276,10 @@ def _parse_keys(config: dict, parent_path: str) -> dict[str, SchemaNode]:
 # ---------------------------------------------------------------------------
 
 
-def _parse_object(config: dict, path: str) -> ObjectNode:
-    merge_policy = _parse_merge_policy(config, path)
-    id_field = _parse_id(config, path)
-    keys = _parse_keys(config, path)
+def _parse_object(config: dict, location: SchemaLocation | None) -> ObjectNode:
+    merge_policy = _parse_merge_policy(config, location)
+    id_field = _parse_id(config, location)
+    keys = _parse_keys(config, location)
     return ObjectNode(
         keys=keys,
         merge_policy=merge_policy,
@@ -228,14 +287,15 @@ def _parse_object(config: dict, path: str) -> ObjectNode:
     )
 
 
-def _parse_map(config: dict, path: str) -> MapNode:
-    merge_policy = _parse_merge_policy(config, path)
-    id_field = _parse_id(config, path)
+def _parse_map(config: dict, location: SchemaLocation | None) -> MapNode:
+    merge_policy = _parse_merge_policy(config, location)
+    id_field = _parse_id(config, location)
 
     raw_value = config.get("value")
+    value_location = field_location(config, "value", location)
     if raw_value is None:
-        raise TypeError(f"'map' requires a 'value' schema at `{path or '.'}`")
-    value = parse_schema(raw_value, path=f"{path}.value")
+        raise SchemaError("'map' requires a 'value' schema", value_location)
+    value = parse_schema(raw_value, location=value_location)
 
     return MapNode(
         value=value,
@@ -244,14 +304,15 @@ def _parse_map(config: dict, path: str) -> MapNode:
     )
 
 
-def _parse_list(config: dict, path: str) -> ListNode:
-    merge_policy = _parse_merge_policy(config, path)
-    id_field = _parse_id(config, path)
+def _parse_list(config: dict, location: SchemaLocation | None) -> ListNode:
+    merge_policy = _parse_merge_policy(config, location)
+    id_field = _parse_id(config, location)
 
     raw_value = config.get("value")
+    value_location = field_location(config, "value", location)
     if raw_value is None:
-        raise TypeError(f"'list' requires a 'value' schema at `{path or '.'}`")
-    value = parse_schema(raw_value, path=f"{path}.value")
+        raise SchemaError("'list' requires a 'value' schema", value_location)
+    value = parse_schema(raw_value, location=value_location)
 
     return ListNode(
         value=value,
@@ -260,84 +321,109 @@ def _parse_list(config: dict, path: str) -> ListNode:
     )
 
 
-def _parse_union(config: dict, path: str) -> UnionNode:
+def _parse_union(config: dict, location: SchemaLocation | None) -> UnionNode:
     raw_value = config.get("value")
+    value_location = field_location(config, "value", location)
     if raw_value is None:
-        raise TypeError(
-            f"'union' requires a 'value' to be a list of branch schemas at `{path or '.'}`"
+        raise SchemaError(
+            "'union' requires a 'value' to be a list of branch schemas",
+            value_location,
         )
 
     if not isinstance(raw_value, list):
-        raise TypeError(
-            f"'union' requires a 'value' to be a list of branch schemas, got {type(raw_value).__name__!r} at `{path}.value`"
+        raise SchemaError(
+            f"'union' requires a 'value' to be a list of branch schemas, got {type(raw_value).__name__!r}",
+            value_location,
         )
     if len(raw_value) < 2:
-        raise ValueError(
-            f"'union' requires at least two branches, got {len(raw_value)} at: {path}"
+        raise SchemaError(
+            f"'union' requires at least two branches, got {len(raw_value)}",
+            value_location,
         )
 
     branches = [
-        parse_schema(branch_cfg, path=f"{path}.value[{i}]")
+        parse_schema(
+            branch_cfg,
+            location=item_location(raw_value, i, value_location),
+        )
         for i, branch_cfg in enumerate(raw_value)
     ]
     return UnionNode(branches=branches)
 
 
-def _parse_tagged_union(config: dict, path: str) -> TaggedUnionNode:
+def _parse_tagged_union(
+    config: dict, location: SchemaLocation | None
+) -> TaggedUnionNode:
     tag_config = config.get("tag")
+    tag_location = field_location(config, "tag", location)
     if tag_config is None:
-        raise TypeError(f"tagged_union requires a 'tag' mapping at `{path or '.'}`")
+        raise SchemaError("tagged_union requires a 'tag' mapping", tag_location)
 
     if not isinstance(tag_config, dict):
-        raise TypeError(
-            f"tagged_union requires a 'tag' mapping with 'name', 'options', and optional 'keys' at `{path}.tag`"
+        raise SchemaError(
+            "tagged_union requires a 'tag' mapping with 'name', 'options', and optional 'keys'",
+            tag_location,
         )
 
     # tag.name ---------------------------------------------------------------
     tag_name = tag_config.get("name")
+    name_location = field_location(tag_config, "name", tag_location)
     if not isinstance(tag_name, str):
-        raise TypeError(
-            f"'name' must be a string, got {type(tag_name).__name__!r} at `{path}.tag.name`"
+        raise SchemaError(
+            f"'name' must be a string, got {type(tag_name).__name__!r}",
+            name_location,
         )
 
     # tag.keys (common fields shared by every variant) -----------------------
     raw_keys = tag_config.get("keys") or {}
+    keys_location = field_location(tag_config, "keys", tag_location)
     if not isinstance(raw_keys, dict):
-        raise TypeError(
-            f"'keys' must be a mapping, got {type(raw_keys).__name__!r} at `{path}.tag.keys`"
+        raise SchemaError(
+            f"'keys' must be a mapping, got {type(raw_keys).__name__!r}",
+            keys_location,
         )
     common_keys = {
-        name: parse_schema(type, path=f"{path}.tag.keys.{name}")
-        for name, type in raw_keys.items()
+        name: parse_schema(
+            type_config,
+            location=field_location(raw_keys, name, keys_location),
+        )
+        for name, type_config in raw_keys.items()
     }
 
     # tag.options ------------------------------------------------------------
     raw_options = tag_config.get("options") or {}
+    options_location = field_location(tag_config, "options", tag_location)
     if not isinstance(raw_options, dict):
-        raise TypeError(
-            f"'options' must be a mapping, got {type(raw_options).__name__!r} at `{path}.tag.options`"
+        raise SchemaError(
+            f"'options' must be a mapping, got {type(raw_options).__name__!r}",
+            options_location,
         )
 
     options: dict[str, TaggedUnionBranch] = {}
     for tag_value, option_config in raw_options.items():
-        opt_path = f"{path}.tag.options.{tag_value}"
+        option_location = field_location(raw_options, tag_value, options_location)
         if option_config is None:
             # Null option: this tag is valid but has no extra fields.
             options[tag_value] = TaggedUnionBranch(extra_keys={})
         elif isinstance(option_config, dict):
             extra_keys = {
-                name: parse_schema(type, path=f"{opt_path}.{name}")
-                for name, type in option_config.items()
+                name: parse_schema(
+                    type_config,
+                    location=field_location(option_config, name, option_location),
+                )
+                for name, type_config in option_config.items()
             }
-            for keys in extra_keys.keys():
-                if keys in common_keys:
-                    raise ValueError(
-                        f"Extra key {keys!r} is also present in common_keys at `{opt_path}`"
+            for key in extra_keys.keys():
+                if key in common_keys:
+                    raise SchemaError(
+                        f"Extra key {key!r} is also present in common_keys",
+                        field_location(option_config, key, option_location),
                     )
             options[tag_value] = TaggedUnionBranch(extra_keys=extra_keys)
         else:
-            raise TypeError(
-                f"Option {tag_value!r} must be null or a mapping of extra field schemas; got {type(option_config).__name__!r} at `{opt_path}`"
+            raise SchemaError(
+                f"Option {tag_value!r} must be null or a mapping of extra field schemas; got {type(option_config).__name__!r}",
+                option_location,
             )
 
     return TaggedUnionNode(

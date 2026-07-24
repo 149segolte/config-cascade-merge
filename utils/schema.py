@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast, get_args
 
-from .schema_loader import SchemaLocation, field_location, item_location, node_location
+from .logging import SchemaError
+from .yaml_loader import SourceLocation, field_location, item_location, node_location
 
 # ---------------------------------------------------------------------------
 # Type constants
@@ -27,33 +28,6 @@ _VALID_COMPOUND_TYPES = get_args(COMPOUND_TYPES)
 _VALID_TYPES = _VALID_PRIMITIVE_TYPES + _VALID_COMPOUND_TYPES
 
 _VALID_MERGE_POLICIES = get_args(MERGE_POLICIES)
-
-# ---------------------------------------------------------------------------
-# Errors
-# ---------------------------------------------------------------------------
-
-
-class SchemaError(Exception):
-    """Raised when a schema config is structurally invalid."""
-
-    def __init__(self, message: str, location: SchemaLocation | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.location = location
-
-    def __str__(self) -> str:
-        if self.location is None:
-            return self.message
-
-        file_name = self.location.file_name
-        line_number = self.location.line_number
-        if file_name is not None and line_number is not None:
-            return f"{file_name}:{line_number}: {self.message}"
-        if line_number is not None:
-            return f"line {line_number}: {self.message}"
-        if file_name is not None:
-            return f"{file_name}: {self.message}"
-        return self.message
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +123,14 @@ SchemaNode = (
 
 # Registry of dispatch functions for compound node types (verified after handler declarations)
 _dispatch: dict[
-    COMPOUND_TYPES, Callable[[dict, SchemaLocation | None], SchemaNode]
+    COMPOUND_TYPES, Callable[[dict, SourceLocation | None], SchemaNode]
 ] = {}
 
 
 def parse_schema(
     config: Any,
     path: str = "",
-    location: SchemaLocation | None = None,
+    location: SourceLocation | None = None,
 ) -> SchemaNode:
     """Parse and normalise a raw config dict into a SchemaNode tree.
 
@@ -211,7 +185,7 @@ def parse_schema(
 
 def _parse_merge_policy(
     config: dict,
-    location: SchemaLocation | None,
+    location: SourceLocation | None,
     default: MERGE_POLICIES = "append",
 ) -> MERGE_POLICIES:
     policy = config.get("merge")
@@ -232,7 +206,7 @@ def _parse_merge_policy(
     return cast(MERGE_POLICIES, policy)
 
 
-def _parse_id(config: dict, location: SchemaLocation | None) -> str | None:
+def _parse_id(config: dict, location: SourceLocation | None) -> str | None:
     id_field = config.get("id")
     if id_field is None:
         return None
@@ -251,7 +225,7 @@ def _parse_id(config: dict, location: SchemaLocation | None) -> str | None:
     return id_field
 
 
-def _parse_keys(config: dict, location: SchemaLocation | None) -> dict[str, SchemaNode]:
+def _parse_keys(config: dict, location: SourceLocation | None) -> dict[str, SchemaNode]:
     raw_keys = config.get("keys")
     if raw_keys is None:
         return {}
@@ -276,7 +250,7 @@ def _parse_keys(config: dict, location: SchemaLocation | None) -> dict[str, Sche
 # ---------------------------------------------------------------------------
 
 
-def _parse_object(config: dict, location: SchemaLocation | None) -> ObjectNode:
+def _parse_object(config: dict, location: SourceLocation | None) -> ObjectNode:
     merge_policy = _parse_merge_policy(config, location)
     id_field = _parse_id(config, location)
     keys = _parse_keys(config, location)
@@ -287,7 +261,7 @@ def _parse_object(config: dict, location: SchemaLocation | None) -> ObjectNode:
     )
 
 
-def _parse_map(config: dict, location: SchemaLocation | None) -> MapNode:
+def _parse_map(config: dict, location: SourceLocation | None) -> MapNode:
     merge_policy = _parse_merge_policy(config, location)
     id_field = _parse_id(config, location)
 
@@ -304,7 +278,7 @@ def _parse_map(config: dict, location: SchemaLocation | None) -> MapNode:
     )
 
 
-def _parse_list(config: dict, location: SchemaLocation | None) -> ListNode:
+def _parse_list(config: dict, location: SourceLocation | None) -> ListNode:
     merge_policy = _parse_merge_policy(config, location)
     id_field = _parse_id(config, location)
 
@@ -321,7 +295,7 @@ def _parse_list(config: dict, location: SchemaLocation | None) -> ListNode:
     )
 
 
-def _parse_union(config: dict, location: SchemaLocation | None) -> UnionNode:
+def _parse_union(config: dict, location: SourceLocation | None) -> UnionNode:
     raw_value = config.get("value")
     value_location = field_location(config, "value", location)
     if raw_value is None:
@@ -352,7 +326,7 @@ def _parse_union(config: dict, location: SchemaLocation | None) -> UnionNode:
 
 
 def _parse_tagged_union(
-    config: dict, location: SchemaLocation | None
+    config: dict, location: SourceLocation | None
 ) -> TaggedUnionNode:
     tag_config = config.get("tag")
     tag_location = field_location(config, "tag", location)

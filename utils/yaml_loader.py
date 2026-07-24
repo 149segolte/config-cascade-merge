@@ -1,8 +1,9 @@
-"""YAML loading helpers for schema files.
+"""Load YAML documents while retaining source locations.
 
-The schema parser needs source locations for friendly validation errors. This
-module wraps PyYAML's safe loader so mappings and sequences retain their
-originating file name and line numbers.
+This module wraps PyYAML's safe loader so mappings and sequences retain their
+originating file name and line numbers. Parsers can use the location helpers
+to produce precise validation errors without depending on a specific document
+type such as a schema or overlay.
 """
 
 from __future__ import annotations
@@ -18,13 +19,13 @@ from yaml.nodes import MappingNode, SequenceNode
 
 
 @dataclass(frozen=True)
-class SchemaLocation:
+class SourceLocation:
     file_name: str | None = None
     line_number: int | None = None
 
 
 class _MarkedDict(dict):
-    """A YAML mapping with source-line metadata attached by SchemaLoader."""
+    """A YAML mapping with source-line metadata attached by YamlLoader."""
 
     yaml_file_name: str | None
     yaml_line_number: int
@@ -33,25 +34,25 @@ class _MarkedDict(dict):
 
 
 class _MarkedList(list):
-    """A YAML sequence with source-line metadata attached by SchemaLoader."""
+    """A YAML sequence with source-line metadata attached by YamlLoader."""
 
     yaml_file_name: str | None
     yaml_line_number: int
     yaml_item_line_numbers: dict[int, int]
 
 
-class SchemaLoader(yaml.SafeLoader):
+class YamlLoader(yaml.SafeLoader):
     """YAML loader that preserves mapping and sequence line numbers."""
 
     def __init__(self, stream: Any, file_name: str | Path | None = None) -> None:
         super().__init__(stream)
-        self.schema_file_name = str(file_name) if file_name is not None else None
+        self.source_file_name = str(file_name) if file_name is not None else None
 
 
-def _construct_mapping(loader: SchemaLoader, node: MappingNode) -> _MarkedDict:
+def _construct_mapping(loader: YamlLoader, node: MappingNode) -> _MarkedDict:
     loader.flatten_mapping(node)
     mapping = _MarkedDict()
-    mapping.yaml_file_name = loader.schema_file_name
+    mapping.yaml_file_name = loader.source_file_name
     mapping.yaml_line_number = node.start_mark.line + 1
     mapping.yaml_key_line_numbers = {}
     mapping.yaml_value_line_numbers = {}
@@ -74,9 +75,9 @@ def _construct_mapping(loader: SchemaLoader, node: MappingNode) -> _MarkedDict:
     return mapping
 
 
-def _construct_sequence(loader: SchemaLoader, node: SequenceNode) -> _MarkedList:
+def _construct_sequence(loader: YamlLoader, node: SequenceNode) -> _MarkedList:
     sequence = _MarkedList()
-    sequence.yaml_file_name = loader.schema_file_name
+    sequence.yaml_file_name = loader.source_file_name
     sequence.yaml_line_number = node.start_mark.line + 1
     sequence.yaml_item_line_numbers = {}
 
@@ -87,20 +88,20 @@ def _construct_sequence(loader: SchemaLoader, node: SequenceNode) -> _MarkedList
     return sequence
 
 
-SchemaLoader.add_constructor(
+YamlLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_mapping,
 )
-SchemaLoader.add_constructor(
+YamlLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_sequence,
 )
 
 
-def load_schema_yaml(source: str, file_name: str | Path | None = None) -> Any:
-    """Load a schema YAML document while preserving source-line metadata."""
+def load_yaml(source: str, file_name: str | Path | None = None) -> Any:
+    """Load one YAML document while preserving source-line metadata."""
 
-    loader = SchemaLoader(source, file_name)
+    loader = YamlLoader(source, file_name)
     try:
         return loader.get_single_data()
     finally:
@@ -108,24 +109,24 @@ def load_schema_yaml(source: str, file_name: str | Path | None = None) -> Any:
 
 
 def node_location(
-    value: Any, fallback: SchemaLocation | None = None
-) -> SchemaLocation | None:
+    value: Any, fallback: SourceLocation | None = None
+) -> SourceLocation | None:
     if isinstance(value, _MarkedDict | _MarkedList):
-        return SchemaLocation(value.yaml_file_name, value.yaml_line_number)
+        return SourceLocation(value.yaml_file_name, value.yaml_line_number)
     return fallback
 
 
 def field_location(
     config: dict,
     field_name: str,
-    fallback: SchemaLocation | None = None,
-) -> SchemaLocation | None:
+    fallback: SourceLocation | None = None,
+) -> SourceLocation | None:
     if isinstance(config, _MarkedDict):
         line_number = config.yaml_value_line_numbers.get(field_name)
         if line_number is None:
             line_number = config.yaml_key_line_numbers.get(field_name)
         if line_number is not None:
-            return SchemaLocation(config.yaml_file_name, line_number)
+            return SourceLocation(config.yaml_file_name, line_number)
 
     return fallback if fallback is not None else node_location(config)
 
@@ -133,11 +134,11 @@ def field_location(
 def item_location(
     sequence: list,
     index: int,
-    fallback: SchemaLocation | None = None,
-) -> SchemaLocation | None:
+    fallback: SourceLocation | None = None,
+) -> SourceLocation | None:
     if isinstance(sequence, _MarkedList):
         line_number = sequence.yaml_item_line_numbers.get(index)
         if line_number is not None:
-            return SchemaLocation(sequence.yaml_file_name, line_number)
+            return SourceLocation(sequence.yaml_file_name, line_number)
 
     return fallback if fallback is not None else node_location(sequence)

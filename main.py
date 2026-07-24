@@ -1,39 +1,44 @@
 #!/usr/bin/env -S uv run
 
-import logging
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-import yaml
+from utils import (
+    OverlayError,
+    SchemaError,
+    configure_logging,
+    load_overlays,
+    load_yaml,
+    logger,
+    parse_schema,
+)
 
-from utils import SchemaError, load_schema_yaml, parse_schema
-
-logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
+configure_logging()
 
 
 def run(base_path: Path, overlays_dir: Path) -> None:
     base = base_path.read_text()
-    base = load_schema_yaml(base, file_name=base_path)
+    base = load_yaml(base, file_name=base_path)
     if base is None:
-        logging.info("base config is empty, exiting.")
+        logger.info("base config is empty, exiting.")
         return
 
     try:
         base = parse_schema(base)
     except SchemaError as e:
-        logging.error(e)
+        logger.error(e)
         sys.exit(1)
 
-    logging.debug(f"base config: {base}")
+    logger.debug(f"base config: {base}")
 
-    overlays = list(overlays_dir.glob("*.yaml"))
-    logging.debug(overlays)
+    try:
+        operations = load_overlays(overlays_dir, base)
+    except OverlayError as e:
+        logger.error(e)
+        sys.exit(1)
 
-    for overlay in overlays:
-        overlay = overlay.read_text()
-        overlay = yaml.safe_load(overlay)
-        logging.debug(overlay)
+    logger.debug("overlay operations: %s", operations)
 
 
 def main() -> None:
@@ -55,12 +60,12 @@ def main() -> None:
 
     base_config_path = Path(args.base_config)
     if not base_config_path.exists() or not base_config_path.is_file():
-        logging.error(f"base config not found at `{base_config_path}`")
+        logger.error(f"base config not found at `{base_config_path}`")
         sys.exit(1)
 
     overlays_dir = Path(args.overlays_dir)
     if not overlays_dir.exists() or not overlays_dir.is_dir():
-        logging.error(
+        logger.error(
             f"overlays directory `{overlays_dir}` does not exist or is not a directory"
         )
         sys.exit(1)

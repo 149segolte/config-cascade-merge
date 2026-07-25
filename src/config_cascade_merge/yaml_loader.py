@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode, SequenceNode
+from yaml.resolver import BaseResolver
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def _construct_mapping(loader: YamlLoader, node: MappingNode) -> _MarkedDict:
     loader.flatten_mapping(node)
     mapping = _MarkedDict()
     mapping.yaml_file_name = loader.source_file_name
+    assert node.start_mark is not None
     mapping.yaml_line_number = node.start_mark.line + 1
     mapping.yaml_key_line_numbers = {}
     mapping.yaml_value_line_numbers = {}
@@ -80,6 +82,7 @@ def _construct_mapping(loader: YamlLoader, node: MappingNode) -> _MarkedDict:
 def _construct_sequence(loader: YamlLoader, node: SequenceNode) -> _MarkedList:
     sequence = _MarkedList()
     sequence.yaml_file_name = loader.source_file_name
+    assert node.start_mark is not None
     sequence.yaml_line_number = node.start_mark.line + 1
     sequence.yaml_item_line_numbers = {}
 
@@ -91,11 +94,11 @@ def _construct_sequence(loader: YamlLoader, node: SequenceNode) -> _MarkedList:
 
 
 YamlLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_mapping,
 )
 YamlLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG,
+    BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_sequence,
 )
 

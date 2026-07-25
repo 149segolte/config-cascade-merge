@@ -51,12 +51,12 @@ def main() -> None:
     )
     overlays_group = parser.add_mutually_exclusive_group()
     overlays_group.add_argument(
-        "-o",
         "--overlays_dir",
         type=str,
         help="directory containing overlay config files",
     )
     overlays_group.add_argument(
+        "-o",
         "--overlays",
         dest="overlay_paths",
         nargs="+",

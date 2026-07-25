@@ -7,38 +7,29 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from config_cascade_merge import (
-    OverlayError,
-    SchemaError,
+    ConfigError,
+    MergePlan,
     configure_logging,
-    load_overlays,
-    load_yaml,
+    load_merge_plan,
     logger,
-    parse_schema,
 )
 
 
-def run(base_path: Path, overlays_dir: Path) -> None:
-    base = base_path.read_text()
-    base = load_yaml(base, file_name=base_path)
-    if base is None:
+def run(base_path: Path, overlays_dir: Path) -> MergePlan | None:
+    """Load a merge plan and render library errors for CLI users."""
+    try:
+        plan = load_merge_plan(base_path, overlays_dir)
+    except ConfigError as error:
+        logger.error(error)
+        sys.exit(1)
+
+    if plan is None:
         logger.info("base config is empty, exiting.")
-        return
+        return None
 
-    try:
-        base = parse_schema(base)
-    except SchemaError as e:
-        logger.error(e)
-        sys.exit(1)
-
-    logger.debug(f"base config: {base}")
-
-    try:
-        operations = load_overlays(overlays_dir, base)
-    except OverlayError as e:
-        logger.error(e)
-        sys.exit(1)
-
-    logger.debug("overlay operations: %s", operations)
+    logger.debug("base config: %s", plan.schema)
+    logger.debug("overlay operations: %s", plan.operations)
+    return plan
 
 
 def main() -> None:

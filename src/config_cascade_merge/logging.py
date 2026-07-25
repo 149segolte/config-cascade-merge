@@ -13,7 +13,7 @@ logger = logging.getLogger("config-cascade-merge")
 
 def configure_logging() -> None:
     """Configure command-line logging for config-cascade-merge."""
-    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
+    logging.basicConfig(format="%(levelname)s: %(message)s")
 
 
 class ConfigError(Exception):

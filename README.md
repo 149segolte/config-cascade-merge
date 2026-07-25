@@ -34,6 +34,32 @@ The module form is equivalent:
 python -m config_cascade_merge -b base.yaml -o overlays/
 ```
 
+## Library usage
+
+Use `load_merge_plan` to load the same validated data without invoking the
+command-line interface:
+
+```python
+from config_cascade_merge import ConfigError, load_merge_plan
+
+try:
+    plan = load_merge_plan("base.yaml", "overlays/")
+except ConfigError as error:
+    print(f"Invalid configuration: {error}")
+else:
+    if plan is not None:
+        print(plan.schema)
+        for operation in plan.operations:
+            print(operation.action, operation.path)
+```
+
+`load_merge_plan` returns a `MergePlan` containing the normalized `schema` and
+the ordered, validated `operations`. An empty base file returns `None`, matching
+the CLI behavior. The function does not configure logging or exit the calling
+process. Schema and overlay failures derive from `ConfigError`, with the more
+specific `SchemaError` and `OverlayError` types available when callers need to
+distinguish them.
+
 ## Base schema
 
 The base file describes the allowed configuration shape rather than containing configuration values.
@@ -179,11 +205,12 @@ uv build
 Project layout:
 
 ```text
+src/config_cascade_merge/api.py         high-level library API
 src/config_cascade_merge/cli.py         CLI entry point
 src/config_cascade_merge/schema.py      schema parsing and normalization
-src/config_cascade_merge/overlay.py      overlay loading and validation
+src/config_cascade_merge/overlay.py     overlay loading and validation
 src/config_cascade_merge/yaml_loader.py YAML loading with source locations
-tests/                           pytest test suite
+tests/                                  pytest test suite
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution and release process.

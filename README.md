@@ -1,23 +1,37 @@
 # config-merger
 
-A small, schema-driven YAML objects merger and validator written in Python. It loads a base schema, validates operations to overlay against it.
+A small, schema-driven YAML object merger and validator written in Python. It loads a base schema and validates ordered overlay operations against it.
 
-## Requirements
+## Installation
 
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (recommended)
+config-merger requires Python 3.10 or newer.
+
+```sh
+python -m pip install config-merger
+```
+
+You can also install the latest development version directly from GitHub:
+
+```sh
+python -m pip install git+https://github.com/149segolte/config-merger.git
+```
 
 ## Quick start
 
 ```sh
-uv sync
-uv run main.py --base_config base.yaml --overlays_dir overlays/
+config-merger --base_config base.yaml --overlays_dir overlays/
 ```
 
 The executable also supports short options:
 
 ```sh
-uv run main.py -b base.yaml -o overlays/
+config-merger -b base.yaml -o overlays/
+```
+
+The module form is equivalent:
+
+```sh
+python -m config_merger -b base.yaml -o overlays/
 ```
 
 ## Base schema
@@ -147,22 +161,32 @@ The CLI exits with status `1` for invalid paths, schemas, or overlays. An empty 
 
 ## Development
 
-Install development dependencies and run the test suite:
+Clone the repository, install development dependencies, and run the test suite:
 
 ```sh
+git clone https://github.com/149segolte/config-merger.git
+cd config-merger
 uv sync --dev
 uv run pytest
+```
+
+Build both source and wheel distributions:
+
+```sh
+uv build
 ```
 
 Project layout:
 
 ```text
-main.py             CLI entry point
-utils/schema.py     schema parsing and normalization
-utils/overlay.py    overlay loading and validation
-utils/yaml_loader.py YAML loading with source locations
-tests/              pytest test suite
+src/config_merger/cli.py         CLI entry point
+src/config_merger/schema.py      schema parsing and normalization
+src/config_merger/overlay.py     overlay loading and validation
+src/config_merger/yaml_loader.py YAML loading with source locations
+tests/                           pytest test suite
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution and release process.
 
 ## License
 

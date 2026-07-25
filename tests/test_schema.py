@@ -2,8 +2,8 @@
 
 import pytest
 
-from utils import SchemaError, load_yaml, parse_schema
-from utils.schema import (
+from config_merger import SchemaError, load_yaml, parse_schema
+from config_merger.schema import (
     PRIMITIVE_TYPES,
     ListNode,
     MapNode,

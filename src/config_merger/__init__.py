@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
+"""Public API for config-merger."""
+
 from .logging import (
     ConfigError,
     OverlayError,

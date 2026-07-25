@@ -1,11 +1,12 @@
-#!/usr/bin/env -S uv run
 # SPDX-License-Identifier: MPL-2.0
+
+"""Command-line interface for config-merger."""
 
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from utils import (
+from config_merger import (
     OverlayError,
     SchemaError,
     configure_logging,
@@ -14,8 +15,6 @@ from utils import (
     logger,
     parse_schema,
 )
-
-configure_logging()
 
 
 def run(base_path: Path, overlays_dir: Path) -> None:
@@ -43,7 +42,12 @@ def run(base_path: Path, overlays_dir: Path) -> None:
 
 
 def main() -> None:
-    parser = ArgumentParser()
+    """Run the config-merger command-line interface."""
+    configure_logging()
+    parser = ArgumentParser(
+        prog="config-merger",
+        description="Validate YAML overlay operations against a base schema.",
+    )
     parser.add_argument(
         "-b", "--base_config", type=str, help="path to the base config file"
     )

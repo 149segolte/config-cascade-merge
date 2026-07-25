@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from utils import (
+from config_merger import (
     ClearOperation,
     MergeOperation,
     OverlayError,
@@ -15,10 +15,10 @@ from utils import (
     parse_overlay,
     parse_schema,
 )
-from utils import (
+from config_merger import (
     TestOperation as OverlayTestOperation,
 )
-from utils.schema import SchemaNode
+from config_merger.schema import SchemaNode
 
 
 @pytest.fixture

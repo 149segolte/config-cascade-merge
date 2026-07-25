@@ -5,9 +5,13 @@ build/
 dist/
 wheels/
 *.egg-info
+.coverage
+.pytest_cache/
+.ruff_cache/
+htmlcov/
 
 # Virtual environments
-.venv
+.venv/
 
 # Temp folders
 test_example/

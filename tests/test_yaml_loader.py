@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from yaml.constructor import ConstructorError
 
-from utils.logging import ConfigError
-from utils.yaml_loader import (
+from config_merger.logging import ConfigError
+from config_merger.yaml_loader import (
     SourceLocation,
     field_location,
     item_location,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 """Shared logging configuration and application errors."""
 
 from __future__ import annotations

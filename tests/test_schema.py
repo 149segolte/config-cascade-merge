@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 import pytest
 
 from utils import SchemaError, load_yaml, parse_schema

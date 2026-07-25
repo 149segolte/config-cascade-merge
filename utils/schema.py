@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 """Schema normalization for config-merger.
 
 Converts a raw YAML config dict into a tree of typed SchemaNode objects.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 """Load and validate overlay operations against a normalized schema.
 
 Overlay validation is intentionally concerned with whether each operation can

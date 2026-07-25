@@ -1,4 +1,5 @@
 #!/usr/bin/env -S uv run
+# SPDX-License-Identifier: MPL-2.0
 
 import sys
 from argparse import ArgumentParser

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 """Load YAML documents while retaining source locations.
 
 This module wraps PyYAML's safe loader so mappings and sequences retain their

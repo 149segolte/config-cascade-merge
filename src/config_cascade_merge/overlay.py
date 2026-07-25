@@ -24,6 +24,7 @@ Example::
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, cast
@@ -177,25 +178,33 @@ def parse_overlay(
     return operations
 
 
-def load_overlays(overlays_dir: str | Path, schema: SchemaNode) -> list[Operation]:
-    """Load all ``.yaml``/``.yml`` files into one ordered operation list.
+def load_overlays(
+    overlays: str | Path | Sequence[str | Path],
+    schema: SchemaNode,
+) -> list[Operation]:
+    """Load overlay files into one ordered operation list.
 
-    Files are processed in lexical filename order. Operations are never
-    deduplicated: ordering is meaningful and later operations may overwrite
-    earlier ones.
+    A directory is scanned for ``.yaml``/``.yml`` files in lexical filename
+    order. When a sequence of paths is provided, only those files are loaded
+    and their given order is preserved. Operations are never deduplicated:
+    ordering is meaningful and later operations may overwrite earlier ones.
     """
-    directory = Path(overlays_dir)
-    if not directory.is_dir():
-        raise OverlayError(f"Overlay directory does not exist: {directory}")
+    if isinstance(overlays, (str, Path)):
+        directory = Path(overlays)
+        if not directory.is_dir():
+            raise OverlayError(f"Overlay directory does not exist: {directory}")
 
-    files = sorted(
-        (
-            path
-            for path in directory.iterdir()
-            if path.suffix.lower() in {".yaml", ".yml"}
-        ),
-        key=lambda path: path.name,
-    )
+        files = sorted(
+            (
+                path
+                for path in directory.iterdir()
+                if path.suffix.lower() in {".yaml", ".yml"}
+            ),
+            key=lambda path: path.name,
+        )
+    else:
+        files = [Path(path) for path in overlays]
+
     result: list[Operation] = []
     last_set_by_path: dict[str, SetOperation] = {}
 

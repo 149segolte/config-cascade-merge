@@ -59,6 +59,29 @@ def test_load_merge_plan_accepts_string_paths(tmp_path: Path) -> None:
     assert plan.operations == ()
 
 
+def test_load_merge_plan_accepts_overlay_path_list(tmp_path: Path) -> None:
+    base_path = tmp_path / "base.yaml"
+    base_path.write_text(
+        "type: object\nkeys:\n  count: {type: integer}\n", encoding="utf-8"
+    )
+    last = tmp_path / "last.yaml"
+    last.write_text(
+        "name: last\noperations:\n  - action: set\n    path: .count\n    data: 2\n",
+        encoding="utf-8",
+    )
+    first = tmp_path / "first.yaml"
+    first.write_text(
+        "name: first\noperations:\n  - action: set\n    path: .count\n    data: 1\n",
+        encoding="utf-8",
+    )
+
+    plan = load_merge_plan(base_path, [first, last])
+
+    assert isinstance(plan, MergePlan)
+    assert [operation.overlay for operation in plan.operations] == ["first", "last"]
+    assert plan.create_object() == {"count": 2}
+
+
 def test_load_merge_plan_returns_none_for_empty_schema(tmp_path: Path) -> None:
     base_path = tmp_path / "base.yaml"
     base_path.write_text("", encoding="utf-8")

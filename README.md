@@ -25,6 +25,17 @@ config-cascade-merge --base_config base.yaml --overlays_dir overlays/
 ```
 
 The complete configuration object is written to standard output as YAML.
+To select specific overlays and control their order explicitly, pass their
+paths with `--overlays`:
+
+```sh
+config-cascade-merge --base_config base.yaml \
+  --overlays overlays/common.yaml overlays/workstation.yaml
+```
+
+`--overlays` and `--overlays_dir` are mutually exclusive. Directory contents
+are processed in lexical filename order; an explicit list is processed in the
+order given.
 
 The executable also supports short options:
 
@@ -64,6 +75,15 @@ specific `SchemaError` and `OverlayError` types available when callers need to
 distinguish them. Calling `plan.create_object()` (or `create_object(plan)`)
 constructs a new object and applies every operation. Fixed object fields that
 have not been assigned are `None`; maps and lists start empty.
+
+The second argument can alternatively be an ordered list of overlay paths:
+
+```python
+plan = load_merge_plan(
+    "base.yaml",
+    ["overlays/common.yaml", "overlays/workstation.yaml"],
+)
+```
 
 ## Base schema
 

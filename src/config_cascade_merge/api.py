@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,13 +38,14 @@ def create_object(plan: MergePlan) -> Any:
 
 def load_merge_plan(
     base_config: str | Path,
-    overlays_dir: str | Path,
+    overlays_dir: str | Path | Sequence[str | Path],
 ) -> MergePlan | None:
     """Load and validate a schema and all overlay files.
 
     Args:
         base_config: Path to the YAML schema file.
-        overlays_dir: Directory containing ordered YAML overlay files.
+        overlays_dir: Directory containing YAML overlay files, or an ordered
+            sequence of overlay file paths.
 
     Returns:
         A merge plan containing the normalized schema and operations. An empty
@@ -51,7 +53,8 @@ def load_merge_plan(
 
     Raises:
         SchemaError: The schema cannot be read, parsed, or normalized.
-        OverlayError: The overlay directory or one of its files is invalid.
+        OverlayError: The overlay directory or one of the overlay files is
+            invalid.
 
     This function is safe to call from another application: it does not
     configure logging or terminate the process.

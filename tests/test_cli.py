@@ -89,3 +89,40 @@ def test_run_exits_when_plan_execution_fails(
 
     assert error.value.code == 1
     assert "Test failed at '.count'" in caplog.text
+
+
+def test_cli_accepts_ordered_overlay_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    schema = tmp_path / "schema.yaml"
+    schema.write_text(
+        "type: object\nkeys:\n  count: {type: integer}\n", encoding="utf-8"
+    )
+    first = tmp_path / "20-first.yaml"
+    first.write_text(
+        "name: first\noperations:\n  - action: set\n    path: .count\n    data: 1\n",
+        encoding="utf-8",
+    )
+    last = tmp_path / "10-last.yaml"
+    last.write_text(
+        "name: last\noperations:\n  - action: set\n    path: .count\n    data: 2\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "config-cascade-merge",
+            "--base_config",
+            str(schema),
+            "--overlays",
+            str(first),
+            str(last),
+        ],
+    )
+
+    main()
+
+    assert yaml.safe_load(capsys.readouterr().out) == {"count": 2}

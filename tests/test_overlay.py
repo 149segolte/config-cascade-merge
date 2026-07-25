@@ -329,6 +329,30 @@ def test_load_overlays_uses_lexical_order_and_ignores_other_files(
     ]
 
 
+def test_load_overlays_accepts_an_ordered_list_of_paths(
+    tmp_path: Path, schema: SchemaNode
+) -> None:
+    first = tmp_path / "20-first.yaml"
+    first.write_text(
+        "name: first\noperations:\n  - action: set\n    path: .count\n    data: 1\n"
+    )
+    second = tmp_path / "10-second.yaml"
+    second.write_text(
+        "name: second\noperations:\n  - action: set\n    path: .count\n    data: 2\n"
+    )
+    (tmp_path / "00-unlisted.yaml").write_text(
+        "name: unlisted\noperations:\n  - action: set\n    path: .count\n    data: 0\n"
+    )
+
+    operations = load_overlays([first, second], schema)
+
+    assert [operation.overlay for operation in operations] == ["first", "second"]
+    assert [operation.source for operation in operations] == [
+        str(first),
+        str(second),
+    ]
+
+
 def test_load_overlays_rejects_missing_directory(
     tmp_path: Path, schema: SchemaNode
 ) -> None:

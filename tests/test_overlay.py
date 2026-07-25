@@ -60,9 +60,9 @@ def schema() -> SchemaNode:
                 },
                 "resource": {
                     "type": "tagged_union",
+                    "keys": {"label": {"type": "string"}},
                     "tag": {
                         "name": "kind",
-                        "keys": {"label": {"type": "string"}},
                         "options": {
                             "file": {"path": {"type": "string"}},
                             "service": {"port": {"type": "integer"}},

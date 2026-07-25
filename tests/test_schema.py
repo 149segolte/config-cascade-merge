@@ -68,9 +68,9 @@ def test_parse_schema_normalizes_tagged_union() -> None:
     schema = parse_schema(
         {
             "type": "tagged_union",
+            "keys": {"label": {"type": "string"}},
             "tag": {
                 "name": "kind",
-                "keys": {"label": {"type": "string"}},
                 "options": {
                     "file": {"path": {"type": "string"}},
                     "disabled": None,
@@ -127,9 +127,9 @@ def test_schema_error_uses_yaml_field_location() -> None:
 def test_tagged_union_rejects_branch_key_also_declared_as_common() -> None:
     config = {
         "type": "tagged_union",
+        "keys": {"label": {"type": "string"}},
         "tag": {
             "name": "kind",
-            "keys": {"label": {"type": "string"}},
             "options": {"file": {"label": {"type": "string"}}},
         },
     }

@@ -335,7 +335,7 @@ def _parse_tagged_union(
 
     if not isinstance(tag_config, dict):
         raise SchemaError(
-            "tagged_union requires a 'tag' mapping with 'name', 'options', and optional 'keys'",
+            "tagged_union requires a 'tag' mapping with 'name' and 'options'",
             tag_location,
         )
 
@@ -348,9 +348,9 @@ def _parse_tagged_union(
             name_location,
         )
 
-    # tag.keys (common fields shared by every variant) -----------------------
-    raw_keys = tag_config.get("keys") or {}
-    keys_location = field_location(tag_config, "keys", tag_location)
+    # keys (common fields shared by every variant) ---------------------------
+    raw_keys = config.get("keys") or {}
+    keys_location = field_location(config, "keys", location)
     if not isinstance(raw_keys, dict):
         raise SchemaError(
             f"'keys' must be a mapping, got {type(raw_keys).__name__!r}",

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-"""Public API for config-merger."""
+"""Public API for config-cascade-merge."""
 
 from .logging import (
     ConfigError,

@@ -12,7 +12,7 @@ wheels = [
 ]
 
 [[package]]
-name = "config-merger"
+name = "config-cascade-merge"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [

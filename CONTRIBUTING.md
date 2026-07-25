@@ -1,14 +1,14 @@
 # Contributing
 
-Thanks for contributing to config-merger.
+Thanks for contributing to config-cascade-merge.
 
 ## Development setup
 
 Install [uv](https://docs.astral.sh/uv/), then create the development environment:
 
 ```sh
-git clone https://github.com/149segolte/config-merger.git
-cd config-merger
+git clone https://github.com/149segolte/config-cascade-merge.git
+cd config-cascade-merge
 uv sync --dev
 ```
 
@@ -27,7 +27,7 @@ Releases are currently built and published manually.
 
 ### Prerequisites
 
-- A PyPI account with permission to publish `config-merger`.
+- A PyPI account with permission to publish `config-cascade-merge`.
 - A PyPI API token with permission to publish the project. The first upload may require an account-scoped token; replace it with a project-scoped token after the project exists on PyPI.
 - A clean checkout of the `main` branch.
 
@@ -82,9 +82,9 @@ After the upload succeeds, verify the files and metadata on the PyPI project pag
 Finally, test installation from PyPI in a fresh environment:
 
 ```sh
-uv venv /tmp/config-merger-release-check
+uv venv /tmp/config-cascade-merge-release-check
 uv pip install \
-  --python /tmp/config-merger-release-check/bin/python \
-  config-merger==X.Y.Z
-/tmp/config-merger-release-check/bin/config-merger --help
+  --python /tmp/config-cascade-merge-release-check/bin/python \
+  config-cascade-merge==X.Y.Z
+/tmp/config-cascade-merge-release-check/bin/config-cascade-merge --help
 ```

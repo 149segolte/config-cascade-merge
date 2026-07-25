@@ -8,16 +8,16 @@ import logging
 
 from .yaml_loader import SourceLocation
 
-logger = logging.getLogger("config-merger")
+logger = logging.getLogger("config-cascade-merge")
 
 
 def configure_logging() -> None:
-    """Configure command-line logging for config-merger."""
+    """Configure command-line logging for config-cascade-merge."""
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
 
 
 class ConfigError(Exception):
-    """Base class for config-merger errors tied to an optional source location."""
+    """Base class for config-cascade-merge errors tied to an optional source location."""
 
     def __init__(self, message: str, location: SourceLocation | None = None) -> None:
         super().__init__(message)

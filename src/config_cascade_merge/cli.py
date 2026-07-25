@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MPL-2.0
 
-"""Command-line interface for config-merger."""
+"""Command-line interface for config-cascade-merge."""
 
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from config_merger import (
+from config_cascade_merge import (
     OverlayError,
     SchemaError,
     configure_logging,
@@ -42,10 +42,10 @@ def run(base_path: Path, overlays_dir: Path) -> None:
 
 
 def main() -> None:
-    """Run the config-merger command-line interface."""
+    """Run the config-cascade-merge command-line interface."""
     configure_logging()
     parser = ArgumentParser(
-        prog="config-merger",
+        prog="config-cascade-merge",
         description="Validate YAML overlay operations against a base schema.",
     )
     parser.add_argument(

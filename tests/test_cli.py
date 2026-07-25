@@ -4,14 +4,14 @@ import sys
 
 import pytest
 
-from config_merger.cli import main
+from config_cascade_merge.cli import main
 
 
 def test_cli_help(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(sys, "argv", ["config-merger", "--help"])
+    monkeypatch.setattr(sys, "argv", ["config-cascade-merge", "--help"])
 
     with pytest.raises(SystemExit) as error:
         main()

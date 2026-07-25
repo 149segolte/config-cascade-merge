@@ -2,8 +2,8 @@
 
 import pytest
 
-from config_merger import SchemaError, load_yaml, parse_schema
-from config_merger.schema import (
+from config_cascade_merge import SchemaError, load_yaml, parse_schema
+from config_cascade_merge.schema import (
     PRIMITIVE_TYPES,
     ListNode,
     MapNode,

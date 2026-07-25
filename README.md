@@ -1,37 +1,37 @@
-# config-merger
+# config-cascade-merge
 
 A small, schema-driven YAML object merger and validator written in Python. It loads a base schema and validates ordered overlay operations against it.
 
 ## Installation
 
-config-merger requires Python 3.10 or newer.
+config-cascade-merge requires Python 3.10 or newer.
 
 ```sh
-python -m pip install config-merger
+python -m pip install config-cascade-merge
 ```
 
 You can also install the latest development version directly from GitHub:
 
 ```sh
-python -m pip install git+https://github.com/149segolte/config-merger.git
+python -m pip install git+https://github.com/149segolte/config-cascade-merge.git
 ```
 
 ## Quick start
 
 ```sh
-config-merger --base_config base.yaml --overlays_dir overlays/
+config-cascade-merge --base_config base.yaml --overlays_dir overlays/
 ```
 
 The executable also supports short options:
 
 ```sh
-config-merger -b base.yaml -o overlays/
+config-cascade-merge -b base.yaml -o overlays/
 ```
 
 The module form is equivalent:
 
 ```sh
-python -m config_merger -b base.yaml -o overlays/
+python -m config_cascade_merge -b base.yaml -o overlays/
 ```
 
 ## Base schema
@@ -164,8 +164,8 @@ The CLI exits with status `1` for invalid paths, schemas, or overlays. An empty 
 Clone the repository, install development dependencies, and run the test suite:
 
 ```sh
-git clone https://github.com/149segolte/config-merger.git
-cd config-merger
+git clone https://github.com/149segolte/config-cascade-merge.git
+cd config-cascade-merge
 uv sync --dev
 uv run pytest
 ```
@@ -179,10 +179,10 @@ uv build
 Project layout:
 
 ```text
-src/config_merger/cli.py         CLI entry point
-src/config_merger/schema.py      schema parsing and normalization
-src/config_merger/overlay.py     overlay loading and validation
-src/config_merger/yaml_loader.py YAML loading with source locations
+src/config_cascade_merge/cli.py         CLI entry point
+src/config_cascade_merge/schema.py      schema parsing and normalization
+src/config_cascade_merge/overlay.py      overlay loading and validation
+src/config_cascade_merge/yaml_loader.py YAML loading with source locations
 tests/                           pytest test suite
 ```
 

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "config-merger"
+name = "config-cascade-merge"
 version = "0.5.0"
 description = "A small, schema-driven YAML object merger and validator"
 readme = "README.md"
@@ -35,11 +35,11 @@ dependencies = [
 ]
 
 [project.scripts]
-config-merger = "config_merger.cli:main"
+config-cascade-merge = "config_cascade_merge.cli:main"
 
 [project.urls]
-Issues = "https://github.com/149segolte/config-merger/issues"
-Repository = "https://github.com/149segolte/config-merger"
+Issues = "https://github.com/149segolte/config-cascade-merge/issues"
+Repository = "https://github.com/149segolte/config-cascade-merge"
 
 [dependency-groups]
 dev = [
@@ -55,7 +55,7 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/config_merger"]
+packages = ["src/config_cascade_merge"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

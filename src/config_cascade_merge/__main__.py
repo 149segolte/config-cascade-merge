@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-"""Support ``python -m config_merger``."""
+"""Support ``python -m config_cascade_merge``."""
 
 from .cli import main
 

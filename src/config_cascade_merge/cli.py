@@ -6,6 +6,8 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+import yaml
+
 from config_cascade_merge import (
     ConfigError,
     MergePlan,
@@ -16,19 +18,20 @@ from config_cascade_merge import (
 
 
 def run(base_path: Path, overlays_dir: Path) -> MergePlan | None:
-    """Load a merge plan and render library errors for CLI users."""
+    """Load and execute a merge plan, emitting the completed object as YAML."""
     try:
         plan = load_merge_plan(base_path, overlays_dir)
+        if plan is None:
+            logger.info("base config is empty, exiting.")
+            return None
+        result = plan.create_object()
     except ConfigError as error:
         logger.error(error)
         sys.exit(1)
 
-    if plan is None:
-        logger.info("base config is empty, exiting.")
-        return None
-
     logger.debug("base config: %s", plan.schema)
     logger.debug("overlay operations: %s", plan.operations)
+    yaml.safe_dump(result, sys.stdout, sort_keys=False)
     return plan
 
 
@@ -37,7 +40,7 @@ def main() -> None:
     configure_logging()
     parser = ArgumentParser(
         prog="config-cascade-merge",
-        description="Validate YAML overlay operations against a base schema.",
+        description="Create a merged YAML object from validated overlay operations.",
     )
     parser.add_argument(
         "-b", "--base_config", type=str, help="path to the base config file"

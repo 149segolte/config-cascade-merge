@@ -45,3 +45,7 @@ class SchemaError(ConfigError):
 
 class OverlayError(ConfigError):
     """Raised when an overlay file or operation is invalid."""
+
+
+class MergeError(ConfigError):
+    """Raised when a validated merge plan cannot be executed."""

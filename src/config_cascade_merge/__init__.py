@@ -2,9 +2,10 @@
 
 """Public API for config-cascade-merge."""
 
-from .api import MergePlan, load_merge_plan
+from .api import MergePlan, create_object, load_merge_plan
 from .logging import (
     ConfigError,
+    MergeError,
     OverlayError,
     SchemaError,
     configure_logging,
@@ -39,6 +40,7 @@ __all__ = [
     "ListNode",
     "MergeOperation",
     "MergePlan",
+    "MergeError",
     "MapNode",
     "ObjectNode",
     "Operation",
@@ -55,6 +57,7 @@ __all__ = [
     "UnionNode",
     "YamlLoader",
     "configure_logging",
+    "create_object",
     "load_merge_plan",
     "load_overlays",
     "load_yaml",

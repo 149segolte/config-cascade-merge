@@ -1,6 +1,8 @@
 # config-cascade-merge
 
-A small, schema-driven YAML object merger and validator written in Python. It loads a base schema and validates ordered overlay operations against it.
+A small, schema-driven YAML object merger and validator written in Python. It
+loads a base schema, validates and applies ordered overlay operations, and
+emits the complete configuration.
 
 ## Installation
 
@@ -21,6 +23,8 @@ python -m pip install git+https://github.com/149segolte/config-cascade-merge.git
 ```sh
 config-cascade-merge --base_config base.yaml --overlays_dir overlays/
 ```
+
+The complete configuration object is written to standard output as YAML.
 
 The executable also supports short options:
 
@@ -48,9 +52,8 @@ except ConfigError as error:
     print(f"Invalid configuration: {error}")
 else:
     if plan is not None:
-        print(plan.schema)
-        for operation in plan.operations:
-            print(operation.action, operation.path)
+        config = plan.create_object()
+        print(config)
 ```
 
 `load_merge_plan` returns a `MergePlan` containing the normalized `schema` and
@@ -58,7 +61,9 @@ the ordered, validated `operations`. An empty base file returns `None`, matching
 the CLI behavior. The function does not configure logging or exit the calling
 process. Schema and overlay failures derive from `ConfigError`, with the more
 specific `SchemaError` and `OverlayError` types available when callers need to
-distinguish them.
+distinguish them. Calling `plan.create_object()` (or `create_object(plan)`)
+constructs a new object and applies every operation. Fixed object fields that
+have not been assigned are `None`; maps and lists start empty.
 
 ## Base schema
 
@@ -102,7 +107,7 @@ keys:
 | `union`                                        | Value matching one of at least two schemas | `value` (list of schemas)                |
 | `tagged_union`                                 | Object selected by a discriminator field   | `keys`, `tag.name`, `tag.options`        |
 
-The `merge` policy is either `append` (default) or `override`. An `id` identifies values for identity-based merging. These policies are normalized and validated now; merge execution is not yet implemented.
+The `merge` policy is either `append` (default) or `override`. An `id` identifies values for identity-based merging.
 
 Example tagged union:
 
@@ -173,7 +178,9 @@ operations:
 - `skip` — keep prior operations from this overlay and skip the remainder
 - `drop` — discard all operations from this overlay
 
-These failure behaviors are represented by normalized operations but are not executed yet.
+These failure behaviors are applied per overlay while creating the object.
+`drop` rolls back earlier changes from that overlay, while `skip` preserves
+earlier changes and skips its remaining operations.
 
 ## Validation and errors
 
@@ -207,6 +214,7 @@ Project layout:
 ```text
 src/config_cascade_merge/api.py         high-level library API
 src/config_cascade_merge/cli.py         CLI entry point
+src/config_cascade_merge/engine.py      merge-plan execution
 src/config_cascade_merge/schema.py      schema parsing and normalization
 src/config_cascade_merge/overlay.py     overlay loading and validation
 src/config_cascade_merge/yaml_loader.py YAML loading with source locations

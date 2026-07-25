@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -21,6 +22,17 @@ class MergePlan:
 
     schema: SchemaNode
     operations: tuple[Operation, ...]
+
+    def create_object(self) -> Any:
+        """Apply this plan and return a new, complete configuration object."""
+        return create_object(self)
+
+
+def create_object(plan: MergePlan) -> Any:
+    """Create a complete configuration object from a validated merge plan."""
+    from .engine import create_object as execute_operations
+
+    return execute_operations(plan.schema, plan.operations)
 
 
 def load_merge_plan(

@@ -44,6 +44,7 @@ def test_load_merge_plan_returns_public_library_result(tmp_path: Path) -> None:
     assert len(plan.operations) == 1
     assert plan.operations[0].action == "set"
     assert plan.operations[0].source == str(overlay_path)
+    assert plan.create_object() == {"count": 2}
 
 
 def test_load_merge_plan_accepts_string_paths(tmp_path: Path) -> None:

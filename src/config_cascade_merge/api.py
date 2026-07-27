@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
-from dataclasses import fields
+from dataclasses import InitVar, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,13 @@ __all__ = ["MergePlan", "Overlay", "Schema"]
 _UNSET = object()
 
 
+class _FactoryToken:
+    """Capability required to construct factory-only public values."""
+
+
+_FACTORY_TOKEN = _FactoryToken()
+
+
 def _source_name(source: str | Path | None) -> str | None:
     return str(source) if source is not None else None
 
@@ -37,20 +44,21 @@ def _plain_data(value: Any) -> Any:
     return deepcopy(value)
 
 
+@dataclass(frozen=True, slots=True, eq=False)
 class Schema:
     """An immutable, normalized configuration schema."""
 
-    __slots__ = ("_root", "_source")
+    _root: _SchemaNode = field(repr=False)
+    _source: str | None = field(default=None, repr=False)
+    _factory_token: InitVar[_FactoryToken | None] = None
 
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        raise TypeError("Schema objects must be created with a Schema factory")
+    def __post_init__(self, factory_token: _FactoryToken | None) -> None:
+        if factory_token is not _FACTORY_TOKEN:
+            raise TypeError("Schema objects must be created with a Schema factory")
 
     @classmethod
     def _create(cls, root: _SchemaNode, source: str | None) -> Schema:
-        schema = object.__new__(cls)
-        object.__setattr__(schema, "_root", root)
-        object.__setattr__(schema, "_source", source)
-        return schema
+        return cls(root, source, _FACTORY_TOKEN)
 
     @classmethod
     def from_file(cls, path: str | Path) -> Schema:
@@ -115,9 +123,6 @@ class Schema:
         """The optional source label associated with this schema."""
         return self._source
 
-    def __setattr__(self, _name: str, _value: object) -> None:
-        raise AttributeError("Schema objects are immutable")
-
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Schema):
             return NotImplemented
@@ -129,13 +134,19 @@ class Schema:
         return f"Schema(source={self._source!r})"
 
 
+@dataclass(frozen=True, slots=True, eq=False)
 class Overlay:
     """An immutable, reusable group of validated overlay operations."""
 
-    __slots__ = ("_name", "_operations", "_schema", "_source")
+    _schema: Schema = field(repr=False)
+    _name: str
+    _source: str | None
+    _operations: tuple[_Operation, ...] = field(repr=False)
+    _factory_token: InitVar[_FactoryToken | None] = None
 
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        raise TypeError("Overlay objects must be created with an Overlay factory")
+    def __post_init__(self, factory_token: _FactoryToken | None) -> None:
+        if factory_token is not _FACTORY_TOKEN:
+            raise TypeError("Overlay objects must be created with an Overlay factory")
 
     @classmethod
     def _from_document(
@@ -151,12 +162,7 @@ class Overlay:
         )
         # Empty operation lists still have a required, validated overlay name.
         name = document["name"]
-        overlay = object.__new__(cls)
-        object.__setattr__(overlay, "_schema", schema)
-        object.__setattr__(overlay, "_name", name)
-        object.__setattr__(overlay, "_source", source)
-        object.__setattr__(overlay, "_operations", operations)
-        return overlay
+        return cls(schema, name, source, operations, _FACTORY_TOKEN)
 
     @classmethod
     def from_file(cls, path: str | Path, schema: Schema) -> Overlay:
@@ -229,9 +235,6 @@ class Overlay:
         """Defensively copied operations in document order."""
         return deepcopy(self._operations)
 
-    def __setattr__(self, _name: str, _value: object) -> None:
-        raise AttributeError("Overlay objects are immutable")
-
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Overlay):
             return NotImplemented
@@ -251,10 +254,12 @@ class Overlay:
         return f"Overlay({details})"
 
 
+@dataclass(frozen=True, slots=True, init=False)
 class MergePlan:
     """An immutable schema plus an ordered chain of validated overlays."""
 
-    __slots__ = ("_overlays", "_schema")
+    _schema: Schema = field(repr=False)
+    _overlays: tuple[Overlay, ...] = field(repr=False)
 
     def __init__(
         self,
@@ -319,9 +324,6 @@ class MergePlan:
                     "re-create it from its raw input for this schema"
                 )
         return candidates
-
-    def __setattr__(self, _name: str, _value: object) -> None:
-        raise AttributeError("MergePlan objects are immutable")
 
     def __repr__(self) -> str:
         return f"MergePlan(schema={self._schema!r}, overlays={self._overlays!r})"

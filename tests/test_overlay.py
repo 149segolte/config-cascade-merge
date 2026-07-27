@@ -1,29 +1,17 @@
 # SPDX-License-Identifier: MPL-2.0
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from config_cascade_merge import (
-    ClearOperation,
-    MergeOperation,
-    OverlayError,
-    RemoveOperation,
-    SetOperation,
-    load_overlays,
-    load_yaml,
-    parse_overlay,
-    parse_schema,
-)
-from config_cascade_merge import (
-    TestOperation as OverlayTestOperation,
-)
-from config_cascade_merge.schema import SchemaNode
+from config_cascade_merge import Overlay, OverlayError, Schema
 
 
 @pytest.fixture
-def schema() -> SchemaNode:
-    return parse_schema(
+def schema() -> Schema:
+    return Schema.from_data(
         {
             "type": "object",
             "keys": {
@@ -76,12 +64,12 @@ def schema() -> SchemaNode:
     )
 
 
-def make_overlay(*operations: dict, name: str = "example") -> dict:
+def make_overlay(*operations: Mapping[str, Any], name: str = "example") -> dict:
     return {"name": name, "operations": list(operations)}
 
 
-def test_parse_overlay_normalizes_all_operation_types(schema: SchemaNode) -> None:
-    operations = parse_overlay(
+def test_overlay_factory_normalizes_all_operation_types(schema: Schema) -> None:
+    overlay = Overlay.from_data(
         make_overlay(
             {
                 "action": "set",
@@ -105,39 +93,48 @@ def test_parse_overlay_normalizes_all_operation_types(schema: SchemaNode) -> Non
             {"action": "clear", "path": ".registry"},
         ),
         schema,
+        source="decoded overlay",
     )
 
-    assert operations == [
-        SetOperation("set", ".profile", {"name": "Ada", "active": True}, "example"),
-        RemoveOperation("remove", ".profile.name", "null", "example"),
-        RemoveOperation("remove", ".registry.old", "delete", "example"),
-        MergeOperation(
-            "merge",
-            ".packages",
-            [{"name": "ruff", "version": 1}],
-            "example",
-        ),
-        OverlayTestOperation(
-            "test",
-            ".profile.name",
-            "Ada",
-            "warn",
-            "example",
-            "unexpected profile",
-        ),
-        ClearOperation("clear", ".registry", "example"),
+    operations = overlay.operations
+    assert overlay.name == "example"
+    assert overlay.source == "decoded overlay"
+    assert [operation.action for operation in operations] == [
+        "set",
+        "remove",
+        "remove",
+        "merge",
+        "test",
+        "clear",
     ]
+    fixed_remove = operations[1]
+    map_remove = operations[2]
+    test_operation = operations[4]
+    assert fixed_remove.action == "remove"
+    assert map_remove.action == "remove"
+    assert test_operation.action == "test"
+    assert fixed_remove.mode == "null"
+    assert map_remove.mode == "delete"
+    assert test_operation.on_fail == "warn"
+    assert test_operation.message == "unexpected profile"
+    assert all(operation.overlay == "example" for operation in operations)
+    assert all(operation.source == "decoded overlay" for operation in operations)
 
 
-def test_test_operation_defaults_to_error_and_accepts_null(schema: SchemaNode) -> None:
-    [operation] = parse_overlay(
-        make_overlay({"action": "test", "path": ".profile.name", "data": None}),
+def test_test_operation_defaults_to_error_and_accepts_null(
+    schema: Schema,
+) -> None:
+    overlay = Overlay.from_data(
+        make_overlay(
+            {"action": "test", "path": ".profile.name", "data": None},
+        ),
         schema,
     )
 
-    assert operation == OverlayTestOperation(
-        "test", ".profile.name", None, "error", "example"
-    )
+    [operation] = overlay.operations
+    assert operation.action == "test"
+    assert operation.data is None
+    assert operation.on_fail == "error"
 
 
 @pytest.mark.parametrize(
@@ -184,11 +181,13 @@ def test_test_operation_defaults_to_error_and_accepts_null(schema: SchemaNode) -
         ),
     ],
 )
-def test_parse_overlay_rejects_invalid_operations(
-    schema: SchemaNode, operation: dict, message: str
+def test_overlay_factory_rejects_invalid_operations(
+    schema: Schema,
+    operation: Mapping[str, Any],
+    message: str,
 ) -> None:
     with pytest.raises(OverlayError, match=message):
-        parse_overlay(make_overlay(operation), schema)
+        Overlay.from_data(make_overlay(operation), schema)
 
 
 @pytest.mark.parametrize(
@@ -225,14 +224,16 @@ def test_parse_overlay_rejects_invalid_operations(
     ],
 )
 def test_set_validates_data_against_target_schema(
-    schema: SchemaNode, operation: dict, message: str
+    schema: Schema,
+    operation: Mapping[str, Any],
+    message: str,
 ) -> None:
     with pytest.raises(OverlayError, match=message):
-        parse_overlay(make_overlay(operation), schema)
+        Overlay.from_data(make_overlay(operation), schema)
 
 
-def test_set_accepts_union_and_tagged_union_values(schema: SchemaNode) -> None:
-    operations = parse_overlay(
+def test_set_accepts_union_and_tagged_union_values(schema: Schema) -> None:
+    overlay = Overlay.from_data(
         make_overlay(
             {"action": "set", "path": ".choice", "data": 7},
             {
@@ -244,29 +245,29 @@ def test_set_accepts_union_and_tagged_union_values(schema: SchemaNode) -> None:
         schema,
     )
 
-    assert [operation.action for operation in operations] == ["set", "set"]
+    assert [operation.action for operation in overlay.operations] == ["set", "set"]
 
 
-def test_merge_allows_partial_append_object(schema: SchemaNode) -> None:
-    [operation] = parse_overlay(
+def test_merge_allows_partial_append_object(schema: Schema) -> None:
+    overlay = Overlay.from_data(
         make_overlay(
-            {"action": "merge", "path": ".profile", "data": {"name": "Grace"}}
+            {"action": "merge", "path": ".profile", "data": {"name": "Grace"}},
         ),
         schema,
     )
 
-    assert operation.action == "merge"
+    assert overlay.operations[0].action == "merge"
 
 
-def test_merge_requires_complete_override_object(schema: SchemaNode) -> None:
+def test_merge_requires_complete_override_object(schema: Schema) -> None:
     with pytest.raises(OverlayError, match="Missing key.*active"):
-        parse_overlay(
+        Overlay.from_data(
             make_overlay(
                 {
                     "action": "merge",
                     "path": ".strict",
                     "data": {"name": "Grace"},
-                }
+                },
             ),
             schema,
         )
@@ -275,7 +276,6 @@ def test_merge_requires_complete_override_object(schema: SchemaNode) -> None:
 @pytest.mark.parametrize(
     ("document", "message"),
     [
-        ([], "Overlay document must be a mapping"),
         ({"operations": []}, "requires a non-empty 'name' string"),
         ({"name": "example", "operations": {}}, "'operations' must be a list"),
         (
@@ -284,89 +284,52 @@ def test_merge_requires_complete_override_object(schema: SchemaNode) -> None:
         ),
     ],
 )
-def test_parse_overlay_rejects_invalid_document_shape(
-    schema: SchemaNode, document: object, message: str
+def test_overlay_from_data_rejects_invalid_document_shape(
+    schema: Schema,
+    document: Mapping[str, Any],
+    message: str,
 ) -> None:
     with pytest.raises(OverlayError, match=message):
-        parse_overlay(document, schema)
+        Overlay.from_data(document, schema)
 
 
-def test_overlay_error_reports_yaml_operation_line(schema: SchemaNode) -> None:
-    document = load_yaml(
-        "name: example\noperations:\n  - action: set\n    path: .count\n    data: wrong\n",
-        "overlay.yaml",
-    )
+def test_overlay_from_yaml_rejects_non_mapping_document(schema: Schema) -> None:
+    with pytest.raises(OverlayError, match="Overlay document must be a mapping"):
+        Overlay.from_yaml("[]\n", schema)
 
+
+def test_overlay_error_reports_yaml_operation_line(schema: Schema) -> None:
     with pytest.raises(OverlayError) as error:
-        parse_overlay(document, schema)
+        Overlay.from_yaml(
+            "name: example\n"
+            "operations:\n"
+            "  - action: set\n"
+            "    path: .count\n"
+            "    data: wrong\n",
+            schema,
+            source="overlay.yaml",
+        )
 
     assert str(error.value).startswith("overlay.yaml:5:")
 
 
-def test_load_overlays_uses_lexical_order_and_ignores_other_files(
-    tmp_path: Path, schema: SchemaNode
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("", "Overlay document is empty"),
+        ("name: [unterminated", "Could not parse overlay YAML"),
+    ],
+)
+def test_overlay_from_file_rejects_empty_or_malformed_yaml(
+    tmp_path: Path,
+    schema: Schema,
+    content: str,
+    message: str,
 ) -> None:
-    (tmp_path / "20-second.yml").write_text(
-        "name: second\noperations:\n  - action: set\n    path: .count\n    data: 2\n"
-    )
-    (tmp_path / "10-first.yaml").write_text(
-        "name: first\noperations:\n  - action: set\n    path: .count\n    data: 1\n"
-    )
-    (tmp_path / "notes.txt").write_text("not: an overlay\n")
+    path = tmp_path / "bad.yaml"
+    path.write_text(content, encoding="utf-8")
 
-    operations = load_overlays(tmp_path, schema)
+    with pytest.raises(OverlayError, match=message) as error:
+        Overlay.from_file(path, schema)
 
-    assert [operation.overlay for operation in operations] == ["first", "second"]
-    assert [
-        operation.data for operation in operations if operation.action == "set"
-    ] == [
-        1,
-        2,
-    ]
-    assert [operation.source for operation in operations] == [
-        str(tmp_path / "10-first.yaml"),
-        str(tmp_path / "20-second.yml"),
-    ]
-
-
-def test_load_overlays_accepts_an_ordered_list_of_paths(
-    tmp_path: Path, schema: SchemaNode
-) -> None:
-    first = tmp_path / "20-first.yaml"
-    first.write_text(
-        "name: first\noperations:\n  - action: set\n    path: .count\n    data: 1\n"
-    )
-    second = tmp_path / "10-second.yaml"
-    second.write_text(
-        "name: second\noperations:\n  - action: set\n    path: .count\n    data: 2\n"
-    )
-    (tmp_path / "00-unlisted.yaml").write_text(
-        "name: unlisted\noperations:\n  - action: set\n    path: .count\n    data: 0\n"
-    )
-
-    operations = load_overlays([first, second], schema)
-
-    assert [operation.overlay for operation in operations] == ["first", "second"]
-    assert [operation.source for operation in operations] == [
-        str(first),
-        str(second),
-    ]
-
-
-def test_load_overlays_rejects_missing_directory(
-    tmp_path: Path, schema: SchemaNode
-) -> None:
-    missing = tmp_path / "missing"
-
-    with pytest.raises(OverlayError, match="Overlay directory does not exist"):
-        load_overlays(missing, schema)
-
-
-@pytest.mark.parametrize("content", ["", "name: [unterminated"])
-def test_load_overlays_rejects_empty_or_malformed_yaml(
-    tmp_path: Path, schema: SchemaNode, content: str
-) -> None:
-    (tmp_path / "bad.yaml").write_text(content)
-
-    with pytest.raises(OverlayError):
-        load_overlays(tmp_path, schema)
+    assert str(path) in str(error.value)

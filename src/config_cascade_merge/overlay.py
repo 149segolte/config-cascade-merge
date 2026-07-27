@@ -24,12 +24,9 @@ Example::
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, cast
-
-import yaml
 
 from .logging import OverlayError, logger
 from .schema import (
@@ -45,7 +42,6 @@ from .yaml_loader import (
     SourceLocation,
     field_location,
     item_location,
-    load_yaml,
     node_location,
 )
 
@@ -176,65 +172,6 @@ def parse_overlay(
         operations.append(operation)
 
     return operations
-
-
-def load_overlays(
-    overlays: str | Path | Sequence[str | Path],
-    schema: SchemaNode,
-) -> list[Operation]:
-    """Load overlay files into one ordered operation list.
-
-    A directory is scanned for ``.yaml``/``.yml`` files in lexical filename
-    order. When a sequence of paths is provided, only those files are loaded
-    and their given order is preserved. Operations are never deduplicated:
-    ordering is meaningful and later operations may overwrite earlier ones.
-    """
-    if isinstance(overlays, (str, Path)):
-        directory = Path(overlays)
-        if not directory.is_dir():
-            raise OverlayError(f"Overlay directory does not exist: {directory}")
-
-        files = sorted(
-            (
-                path
-                for path in directory.iterdir()
-                if path.suffix.lower() in {".yaml", ".yml"}
-            ),
-            key=lambda path: path.name,
-        )
-    else:
-        files = [Path(path) for path in overlays]
-
-    result: list[Operation] = []
-    last_set_by_path: dict[str, SetOperation] = {}
-
-    for path in files:
-        try:
-            document = load_yaml(path.read_text(encoding="utf-8"), file_name=path)
-        except (OSError, UnicodeError, yaml.YAMLError) as error:
-            raise OverlayError(
-                f"Could not read overlay: {error}", SourceLocation(str(path))
-            ) from error
-        if document is None:
-            raise OverlayError(
-                "Overlay document is empty", SourceLocation(str(path), 1)
-            )
-
-        operations = parse_overlay(document, schema, file_name=path)
-        for operation in operations:
-            if isinstance(operation, SetOperation):
-                previous = last_set_by_path.get(operation.path)
-                if previous is not None and previous.overlay != operation.overlay:
-                    logger.debug(
-                        "Overlay %r replaces a set value at %s from overlay %r",
-                        operation.overlay,
-                        operation.path,
-                        previous.overlay,
-                    )
-                last_set_by_path[operation.path] = operation
-        result.extend(operations)
-
-    return result
 
 
 def _parse_operation(

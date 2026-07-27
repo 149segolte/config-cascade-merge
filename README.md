@@ -40,50 +40,96 @@ order given.
 The executable also supports short options:
 
 ```sh
-config-cascade-merge -b base.yaml -o overlays/
+config-cascade-merge -b base.yaml \
+  -o overlays/common.yaml overlays/workstation.yaml
 ```
 
 The module form is equivalent:
 
 ```sh
-python -m config_cascade_merge -b base.yaml -o overlays/
+python -m config_cascade_merge -b base.yaml --overlays_dir overlays/
 ```
 
 ## Library usage
 
-Use `load_merge_plan` to load the same validated data without invoking the
-command-line interface:
+Create a reusable `Schema`, validate each `Overlay` against it, and compose an
+immutable `MergePlan`:
 
 ```python
-from config_cascade_merge import ConfigError, load_merge_plan
+from config_cascade_merge import ConfigError, MergePlan, Overlay, Schema
 
 try:
-    plan = load_merge_plan("base.yaml", "overlays/")
+    schema = Schema.from_file("base.yaml")
+    common = Overlay.from_file("overlays/common.yaml", schema)
+    workstation = Overlay.from_file("overlays/workstation.yaml", schema)
+    plan = MergePlan(schema).with_overlays([common, workstation])
 except ConfigError as error:
     print(f"Invalid configuration: {error}")
 else:
-    if plan is not None:
-        config = plan.create_object()
-        print(config)
+    config = plan.create_object()
+    print(config)
 ```
 
-`load_merge_plan` returns a `MergePlan` containing the normalized `schema` and
-the ordered, validated `operations`. An empty base file returns `None`, matching
-the CLI behavior. The function does not configure logging or exit the calling
-process. Schema and overlay failures derive from `ConfigError`, with the more
-specific `SchemaError` and `OverlayError` types available when callers need to
-distinguish them. Calling `plan.create_object()` (or `create_object(plan)`)
-constructs a new object and applies every operation. Fixed object fields that
-have not been assigned are `None`; maps and lists start empty.
+`Schema`, `Overlay`, and `MergePlan` are immutable public objects. Their
+factories do not configure logging or exit the calling process. Schema,
+overlay, and execution failures derive from `ConfigError`, with the more
+specific `SchemaError`, `OverlayError`, and `MergeError` types available when
+callers need to distinguish them.
 
-The second argument can alternatively be an ordered list of overlay paths:
+Calling `plan.create_object()` constructs the default schema-shaped object and
+applies each overlay in order. Fixed object fields without values are `None`;
+maps and lists start empty.
+
+### Incremental composition and branching
+
+Composition returns a new plan and leaves prior plans unchanged:
 
 ```python
-plan = load_merge_plan(
-    "base.yaml",
-    ["overlays/common.yaml", "overlays/workstation.yaml"],
+base_plan = MergePlan(schema)
+common_plan = base_plan.with_overlay(common)
+
+workstation_plan = common_plan.with_overlay(workstation)
+server_plan = common_plan.with_overlay(server)
+```
+
+`with_overlays(iterable)` appends several overlays in iterable order. The
+read-only `plan.schema` and `plan.overlays` properties make plans easy to
+inspect and reuse. Schemas expose their optional `source`; overlays expose
+their `name`, optional `source`, and defensively copied `operations`.
+
+### In-memory inputs
+
+All input objects support file, YAML-text, and already-decoded forms:
+
+```python
+overlay = Overlay.from_file(path_to_overlay)
+overlay = Overlay.from_yaml(yaml_text)
+overlay = Overlay.from_data(
+    {
+        "name": "runtime",
+        "operations": [
+            {"action": "set", "path": ".profile.name", "data": "Ada"},
+        ],
+    },
+    schema,
+    source="runtime settings",
 )
 ```
+
+Use `Schema.from_file(...)`, `Schema.from_yaml(...)`, and `Schema.from_data(...)` for similar behavior. Optional `source` labels are included in validation errors.
+
+### Starting from an existing value
+
+Pass an existing complete configuration with `initial`:
+
+```python
+updated = plan.create_object(initial=existing_config)
+```
+
+The starting value is defensively copied and fully validated before any
+overlay operation executes. Missing fields, unknown fields, and invalid types
+fail immediately. Neither successful nor failed execution mutates the supplied
+object.
 
 ## Base schema
 
@@ -198,9 +244,10 @@ operations:
 - `skip` — keep prior operations from this overlay and skip the remainder
 - `drop` — discard all operations from this overlay
 
-These failure behaviors are applied per overlay while creating the object.
-`drop` rolls back earlier changes from that overlay, while `skip` preserves
-earlier changes and skips its remaining operations.
+These failure behaviors are applied to each explicit `Overlay` group while
+creating the object. `drop` rolls back earlier changes from that overlay, while
+`skip` preserves earlier changes and skips its remaining operations. Separate
+overlay documents remain separate groups even when they use the same name.
 
 ## Validation and errors
 
@@ -210,7 +257,8 @@ The validator rejects malformed YAML, invalid schemas, unknown paths or fields, 
 overlays/10-workstation.yaml:8: Data at '.packages[0].version' must be integer, got str
 ```
 
-The CLI exits with status `1` for invalid paths, schemas, or overlays. An empty base file exits successfully without processing overlays.
+The CLI exits with status `1` for invalid paths, schemas, overlays, or empty
+schema documents.
 
 ## Development
 

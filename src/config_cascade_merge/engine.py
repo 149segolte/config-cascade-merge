@@ -7,7 +7,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Callable, Sequence, cast
 
-from .logging import MergeError, logger
+from .logging import MergeError, OverlayError, logger
 from .overlay import (
     ClearOperation,
     MergeOperation,
@@ -15,6 +15,7 @@ from .overlay import (
     RemoveOperation,
     SetOperation,
     TestOperation,
+    _validate_value,
 )
 from .schema import (
     ListNode,
@@ -29,28 +30,40 @@ from .schema import (
 _MISSING = object()
 
 
-def create_object(schema: SchemaNode, operations: Sequence[Operation]) -> Any:
-    """Create a complete object by applying validated operations in order.
+def create_object(
+    schema: SchemaNode,
+    operation_groups: Sequence[Sequence[Operation]],
+    *,
+    initial: Any = _MISSING,
+) -> Any:
+    """Create a complete object by applying validated overlay groups in order.
 
     Fixed object fields are present from the start. Fields without a value use
     ``None``; maps and lists start empty. This means an operation can address a
     nested fixed field without first creating each of its parents.
 
+    A supplied initial value is copied and fully validated before any operation
+    executes.
+
     Test operations are handled per overlay. A failed ``drop`` test rolls back
     that overlay, ``skip`` keeps work already performed by it, ``warn`` logs and
     continues, and ``error`` raises :class:`MergeError`.
     """
-    result = _empty_value(schema)
-    index = 0
+    if initial is _MISSING:
+        result = _empty_value(schema)
+    else:
+        result = _copy_value(initial)
+        try:
+            _validate_value(schema, result, ".", None, complete=True)
+        except OverlayError as error:
+            raise MergeError(
+                f"Invalid initial configuration: {error.message}",
+                error.location,
+            ) from error
 
-    while index < len(operations):
-        group_key = _overlay_key(operations[index])
-        end = index + 1
-        while end < len(operations) and _overlay_key(operations[end]) == group_key:
-            end += 1
-
+    for operations in operation_groups:
         before_overlay = deepcopy(result)
-        for operation in operations[index:end]:
+        for operation in operations:
             if isinstance(operation, TestOperation):
                 actual = _read_path(result, operation.path)
                 if actual is not _MISSING and actual == operation.data:
@@ -69,14 +82,7 @@ def create_object(schema: SchemaNode, operations: Sequence[Operation]) -> Any:
 
             result = _apply_operation(schema, result, operation)
 
-        index = end
-
     return result
-
-
-def _overlay_key(operation: Operation) -> tuple[str, str | None]:
-    """Identify one overlay document, even when documents reuse a name."""
-    return operation.overlay, operation.source
 
 
 def _empty_value(node: SchemaNode) -> Any:

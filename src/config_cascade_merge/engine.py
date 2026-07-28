@@ -35,6 +35,7 @@ def create_object(
     operation_groups: Sequence[Sequence[Operation]],
     *,
     initial: Any = _MISSING,
+    validate: bool = True,
 ) -> Any:
     """Create a complete object by applying validated overlay groups in order.
 
@@ -49,6 +50,9 @@ def create_object(
     Test operations are handled per overlay. A failed ``drop`` test rolls back
     that overlay, ``skip`` keeps work already performed by it, ``warn`` logs and
     continues, and ``error`` raises :class:`MergeError`.
+
+    By default, the final result is fully validated. Pass ``validate=False`` to
+    return a partial result containing structural placeholder values.
     """
     if initial is _MISSING:
         result = _empty_value(schema)
@@ -81,6 +85,15 @@ def create_object(
                 raise MergeError(message)
 
             result = _apply_operation(schema, result, operation)
+
+    if validate:
+        try:
+            _validate_value(schema, result, ".", None, complete=True)
+        except OverlayError as error:
+            raise MergeError(
+                f"Invalid final configuration: {error.message}",
+                error.location,
+            ) from error
 
     return result
 

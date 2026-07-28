@@ -270,14 +270,33 @@ class MergePlan:
             ) from error
         return MergePlan(self.schema, (*self.overlays, *additions))
 
-    def create_object(self, *, initial: Any = _UNSET) -> Any:
-        """Create a configuration, optionally starting from a partial value."""
+    def create_object(
+        self,
+        *,
+        initial: Any = _UNSET,
+        validate: bool = True,
+    ) -> Any:
+        """Create a configuration from this plan.
+
+        ``initial`` may be a partial value. By default, the result is fully
+        validated after all overlays run; pass ``validate=False`` to allow
+        structural ``None`` placeholders in the returned value.
+        """
         from .engine import create_object
 
         operation_groups = tuple(overlay._operations for overlay in self.overlays)
         if initial is _UNSET:
-            return create_object(self.schema._root, operation_groups)
-        return create_object(self.schema._root, operation_groups, initial=initial)
+            return create_object(
+                self.schema._root,
+                operation_groups,
+                validate=validate,
+            )
+        return create_object(
+            self.schema._root,
+            operation_groups,
+            initial=initial,
+            validate=validate,
+        )
 
     def _validated(self, overlays: Iterable[Overlay]) -> tuple[Overlay, ...]:
         try:

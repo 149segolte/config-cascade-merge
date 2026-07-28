@@ -73,16 +73,64 @@ def complete_initial() -> dict[str, Any]:
     }
 
 
-def test_empty_plan_creates_complete_schema_shaped_object(schema: Schema) -> None:
+def test_validation_can_be_disabled_for_schema_shaped_object(schema: Schema) -> None:
     plan = MergePlan(schema)
 
-    assert plan.create_object() == {
+    assert plan.create_object(validate=False) == {
         "profile": {"name": None, "active": None},
         "labels": {},
         "packages": [],
         "modules": {},
         "count": None,
     }
+
+
+def test_create_object_validates_final_configuration_by_default(
+    schema: Schema,
+) -> None:
+    with pytest.raises(
+        MergeError,
+        match=r"Invalid final configuration: .*'.profile.name'.*NoneType",
+    ):
+        MergePlan(schema).create_object()
+
+
+def test_create_object_validates_after_overlays(schema: Schema) -> None:
+    overlay = make_overlay(
+        schema,
+        {"action": "set", "path": ".profile.name", "data": "Ada"},
+        {"action": "set", "path": ".profile.active", "data": True},
+        {"action": "set", "path": ".count", "data": 1},
+    )
+
+    assert MergePlan(schema, [overlay]).create_object() == {
+        "profile": {"name": "Ada", "active": True},
+        "labels": {},
+        "packages": [],
+        "modules": {},
+        "count": 1,
+    }
+
+
+def test_create_object_rejects_overlay_that_uninitializes_required_field() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {"required": {"type": "string"}},
+        }
+    )
+    overlay = make_overlay(
+        schema,
+        {"action": "remove", "path": ".required"},
+    )
+
+    with pytest.raises(
+        MergeError,
+        match=r"Invalid final configuration: .*'.required'.*NoneType",
+    ):
+        MergePlan(schema, [overlay]).create_object(
+            initial={"required": "Ada"},
+        )
 
 
 def test_optional_fields_are_omitted_and_can_be_materialized() -> None:
@@ -102,14 +150,14 @@ def test_optional_fields_are_omitted_and_can_be_materialized() -> None:
             },
         }
     )
-    empty = MergePlan(schema).create_object()
+    empty = MergePlan(schema).create_object(validate=False)
     overlay = make_overlay(
         schema,
         {"action": "set", "path": ".profile.name", "data": "Ada"},
     )
 
     assert empty == {"required": None}
-    assert MergePlan(schema, [overlay]).create_object() == {
+    assert MergePlan(schema, [overlay]).create_object(validate=False) == {
         "required": None,
         "profile": {"name": "Ada"},
     }
@@ -132,7 +180,8 @@ def test_remove_deletes_optional_fields_but_nulls_required_fields() -> None:
     )
 
     assert MergePlan(schema, [overlay]).create_object(
-        initial={"required": "Ada", "nickname": "A"}
+        initial={"required": "Ada", "nickname": "A"},
+        validate=False,
     ) == {"required": None}
 
 
@@ -187,7 +236,10 @@ def test_optional_does_not_make_null_valid() -> None:
     )
 
     with pytest.raises(MergeError, match="must be string"):
-        MergePlan(schema).create_object(initial={"nickname": None})
+        MergePlan(schema).create_object(
+            initial={"nickname": None},
+            validate=False,
+        )
 
 
 def test_create_object_applies_all_mutating_operations(schema: Schema) -> None:
@@ -217,7 +269,7 @@ def test_create_object_applies_all_mutating_operations(schema: Schema) -> None:
         {"action": "remove", "path": ".labels.legacy"},
     )
 
-    assert MergePlan(schema, [overlay]).create_object() == {
+    assert MergePlan(schema, [overlay]).create_object(validate=False) == {
         "profile": {"name": "Ada", "active": None},
         "labels": {"team": "core"},
         "packages": [
@@ -235,9 +287,9 @@ def test_set_materializes_missing_dynamic_object_parent(schema: Schema) -> None:
         {"action": "set", "path": ".modules.work.theme", "data": "dark"},
     )
 
-    assert MergePlan(schema, [overlay]).create_object()["modules"] == {
-        "work": {"theme": "dark", "enabled": None}
-    }
+    result = MergePlan(schema, [overlay]).create_object(validate=False)
+
+    assert result["modules"] == {"work": {"theme": "dark", "enabled": None}}
 
 
 def test_clear_uses_the_target_container_type(schema: Schema) -> None:
@@ -253,7 +305,7 @@ def test_clear_uses_the_target_container_type(schema: Schema) -> None:
         {"action": "clear", "path": ".packages"},
     )
 
-    result = MergePlan(schema, [overlay]).create_object()
+    result = MergePlan(schema, [overlay]).create_object(validate=False)
 
     assert result["labels"] == {}
     assert result["packages"] == []
@@ -334,7 +386,10 @@ def test_failed_test_controls_remaining_overlay_operations(
         {"action": "set", "path": ".count", "data": 2},
     )
 
-    assert MergePlan(schema, [overlay]).create_object()["count"] == expected
+    assert (
+        MergePlan(schema, [overlay]).create_object(validate=False)["count"]
+        == expected
+    )
 
 
 def test_duplicate_overlay_names_remain_separate_drop_boundaries(
@@ -357,7 +412,10 @@ def test_duplicate_overlay_names_remain_separate_drop_boundaries(
         name="duplicate",
     )
 
-    assert MergePlan(schema, [first, second]).create_object()["count"] == 1
+    assert (
+        MergePlan(schema, [first, second]).create_object(validate=False)["count"]
+        == 1
+    )
 
 
 def test_warn_logs_and_continues(
@@ -377,7 +435,7 @@ def test_warn_logs_and_continues(
     )
 
     with caplog.at_level(logging.WARNING, logger="config-cascade-merge"):
-        result = MergePlan(schema, [overlay]).create_object()
+        result = MergePlan(schema, [overlay]).create_object(validate=False)
 
     assert result["count"] == 2
     assert "count was not initialized" in caplog.text
@@ -404,10 +462,10 @@ def test_repeated_execution_does_not_mutate_overlay_data(schema: Schema) -> None
     )
     plan = MergePlan(schema, [overlay])
 
-    first = plan.create_object()
+    first = plan.create_object(validate=False)
     first["packages"][0]["version"] = 99
 
-    assert plan.create_object()["packages"][0]["version"] == 1
+    assert plan.create_object(validate=False)["packages"][0]["version"] == 1
 
 
 def test_valid_initial_object_is_copied_and_merged(schema: Schema) -> None:
@@ -462,7 +520,7 @@ def test_partial_initial_materializes_missing_fields(schema: Schema) -> None:
         "modules": {"work": {"theme": "light"}},
     }
 
-    assert MergePlan(schema).create_object(initial=initial) == {
+    assert MergePlan(schema).create_object(initial=initial, validate=False) == {
         "profile": {"name": "Grace", "active": None},
         "labels": {},
         "packages": [{"name": "ruff", "version": None}],
@@ -473,7 +531,8 @@ def test_partial_initial_materializes_missing_fields(schema: Schema) -> None:
 
 def test_partial_initial_materializes_missing_identity_field(schema: Schema) -> None:
     assert MergePlan(schema).create_object(
-        initial={"packages": [{"version": 1}]}
+        initial={"packages": [{"version": 1}]},
+        validate=False,
     )["packages"] == [{"name": None, "version": 1}]
 
 
@@ -496,7 +555,8 @@ def test_partial_initial_ignores_override_policy_and_omits_optional_fields() -> 
     )
 
     assert MergePlan(schema).create_object(
-        initial={"profile": {"name": "Ada"}}
+        initial={"profile": {"name": "Ada"}},
+        validate=False,
     ) == {"profile": {"name": "Ada", "active": None}}
 
 
@@ -527,7 +587,8 @@ def test_partial_initial_materializes_tagged_union_fields() -> None:
     )
 
     assert MergePlan(schema).create_object(
-        initial={"resource": {"kind": "file", "path": "/tmp/config"}}
+        initial={"resource": {"kind": "file", "path": "/tmp/config"}},
+        validate=False,
     ) == {
         "resource": {
             "kind": "file",
@@ -586,7 +647,10 @@ def test_partial_initial_selects_unique_union_object_branch() -> None:
         }
     )
 
-    assert MergePlan(schema).create_object(initial={"name": "api"}) == {
+    assert MergePlan(schema).create_object(
+        initial={"name": "api"},
+        validate=False,
+    ) == {
         "name": "api",
         "active": None,
     }

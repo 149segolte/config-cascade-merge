@@ -76,9 +76,12 @@ overlay, and execution failures derive from `ConfigError`, with the more
 specific `SchemaError`, `OverlayError`, and `MergeError` types available when
 callers need to distinguish them.
 
-Calling `plan.create_object()` constructs the default schema-shaped object and
-applies each overlay in order. Fixed object fields without values are `None`;
-maps and lists start empty.
+Calling `plan.create_object()` constructs the default schema-shaped object,
+applies each overlay in order, and validates that the final result is complete.
+Required fields must contain values of their declared types. Use
+`plan.create_object(validate=False)` when intentionally constructing a partial
+result: fixed object fields without values are `None`, while maps and lists
+start empty.
 
 ### Incremental composition and branching
 
@@ -133,6 +136,11 @@ inside list items and map values. Omitted optional fields remain absent.
 Unknown fields, invalid types, invalid tagged unions, and ambiguous untagged
 unions fail immediately. Neither successful nor failed execution mutates the
 supplied object.
+
+Final validation runs after every overlay by default, so any required fields
+that still contain structural `None` placeholders cause `MergeError` with an
+`Invalid final configuration` message. Pass `validate=False` to skip only this
+final completeness check; initial values and overlay data are still validated.
 
 ## Base schema
 

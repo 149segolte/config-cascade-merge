@@ -455,35 +455,183 @@ def test_result_mutation_never_reaches_initial_object(schema: Schema) -> None:
     assert initial == complete_initial()
 
 
+def test_partial_initial_materializes_missing_fields(schema: Schema) -> None:
+    initial = {
+        "profile": {"name": "Grace"},
+        "packages": [{"name": "ruff"}],
+        "modules": {"work": {"theme": "light"}},
+    }
+
+    assert MergePlan(schema).create_object(initial=initial) == {
+        "profile": {"name": "Grace", "active": None},
+        "labels": {},
+        "packages": [{"name": "ruff", "version": None}],
+        "modules": {"work": {"theme": "light", "enabled": None}},
+        "count": None,
+    }
+
+
+def test_partial_initial_materializes_missing_identity_field(schema: Schema) -> None:
+    assert MergePlan(schema).create_object(
+        initial={"packages": [{"version": 1}]}
+    )["packages"] == [{"name": None, "version": 1}]
+
+
+def test_partial_initial_ignores_override_policy_and_omits_optional_fields() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "profile": {
+                    "type": "object",
+                    "merge": "override",
+                    "keys": {
+                        "name": {"type": "string"},
+                        "active": {"type": "boolean"},
+                        "nickname": {"type": "string", "optional": True},
+                    },
+                }
+            },
+        }
+    )
+
+    assert MergePlan(schema).create_object(
+        initial={"profile": {"name": "Ada"}}
+    ) == {"profile": {"name": "Ada", "active": None}}
+
+
+def test_partial_initial_materializes_tagged_union_fields() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "resource": {
+                    "type": "tagged_union",
+                    "keys": {
+                        "label": {"type": "string"},
+                        "note": {"type": "string", "optional": True},
+                    },
+                    "tag": {
+                        "name": "kind",
+                        "options": {
+                            "file": {
+                                "path": {"type": "string"},
+                                "mode": {"type": "string", "optional": True},
+                            },
+                            "service": {"port": {"type": "integer"}},
+                        },
+                    },
+                }
+            },
+        }
+    )
+
+    assert MergePlan(schema).create_object(
+        initial={"resource": {"kind": "file", "path": "/tmp/config"}}
+    ) == {
+        "resource": {
+            "kind": "file",
+            "label": None,
+            "path": "/tmp/config",
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("resource", "message"),
+    [
+        ({"path": "/tmp/config"}, "requires tag 'kind'"),
+        ({"kind": "database"}, "requires tag 'kind'"),
+        ({"kind": "file", "unknown": True}, "Unknown key.*unknown"),
+    ],
+)
+def test_partial_initial_rejects_invalid_tagged_unions(
+    resource: dict[str, Any],
+    message: str,
+) -> None:
+    schema = Schema.from_data(
+        {
+            "type": "tagged_union",
+            "tag": {
+                "name": "kind",
+                "options": {"file": {"path": {"type": "string"}}},
+            },
+        }
+    )
+
+    with pytest.raises(MergeError, match=message):
+        MergePlan(schema).create_object(initial=resource)
+
+
+def test_partial_initial_selects_unique_union_object_branch() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "union",
+            "value": [
+                {
+                    "type": "object",
+                    "keys": {
+                        "name": {"type": "string"},
+                        "active": {"type": "boolean"},
+                    },
+                },
+                {
+                    "type": "object",
+                    "keys": {
+                        "port": {"type": "integer"},
+                        "secure": {"type": "boolean"},
+                    },
+                },
+            ],
+        }
+    )
+
+    assert MergePlan(schema).create_object(initial={"name": "api"}) == {
+        "name": "api",
+        "active": None,
+    }
+
+
 @pytest.mark.parametrize(
     ("initial", "message"),
     [
-        (
-            {
-                "profile": {"name": "Grace", "active": False},
-                "labels": {},
-                "packages": [],
-                "modules": {},
-            },
-            "Missing key.*count",
-        ),
-        (
-            {
-                **complete_initial(),
-                "count": "one",
-            },
-            "must be integer",
-        ),
-        (
-            {
-                **complete_initial(),
-                "unknown": True,
-            },
-            "Unknown key.*unknown",
-        ),
+        ({"unknown": True}, "does not match any union branch"),
+        ({}, "ambiguously matches multiple union branches"),
     ],
 )
-def test_invalid_initial_object_fails_full_validation(
+def test_partial_initial_rejects_unmatched_or_ambiguous_union_objects(
+    initial: dict[str, Any],
+    message: str,
+) -> None:
+    schema = Schema.from_data(
+        {
+            "type": "union",
+            "value": [
+                {
+                    "type": "object",
+                    "keys": {"name": {"type": "string"}},
+                },
+                {
+                    "type": "object",
+                    "keys": {"port": {"type": "integer"}},
+                },
+            ],
+        }
+    )
+
+    with pytest.raises(MergeError, match=message):
+        MergePlan(schema).create_object(initial=initial)
+
+
+@pytest.mark.parametrize(
+    ("initial", "message"),
+    [
+        ({**complete_initial(), "count": "one"}, "must be integer"),
+        ({**complete_initial(), "count": None}, "must be integer"),
+        ({**complete_initial(), "unknown": True}, "Unknown key.*unknown"),
+    ],
+)
+def test_invalid_initial_object_fails_validation(
     schema: Schema,
     initial: dict[str, Any],
     message: str,
@@ -509,16 +657,11 @@ def test_invalid_initial_fails_before_overlay_execution(
             "message": "overlay executed",
         },
     )
-    incomplete = {
-        "profile": {"name": "Grace", "active": False},
-        "labels": {},
-        "packages": [],
-        "modules": {},
-    }
+    invalid = {"count": "one"}
 
     with caplog.at_level(logging.WARNING, logger="config-cascade-merge"):
         with pytest.raises(MergeError, match="Invalid initial configuration"):
-            MergePlan(schema, [overlay]).create_object(initial=incomplete)
+            MergePlan(schema, [overlay]).create_object(initial=invalid)
 
     assert "overlay executed" not in caplog.text
 

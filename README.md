@@ -118,18 +118,21 @@ overlay = Overlay.from_data(
 
 Use `Schema.from_file(...)`, `Schema.from_yaml(...)`, and `Schema.from_data(...)` for similar behavior. Optional `source` labels are included in validation errors.
 
-### Starting from an existing value
+### Starting from a partial value
 
-Pass an existing complete configuration with `initial`:
+Pass an existing partial configuration with `initial`:
 
 ```python
 updated = plan.create_object(initial=existing_config)
 ```
 
-The starting value is defensively copied and fully validated before any
-overlay operation executes. Missing fields, unknown fields, and invalid types
-fail immediately. Neither successful nor failed execution mutates the supplied
-object.
+The starting value is defensively copied, validated, and recursively completed
+before any overlay operation executes. Missing required object fields receive
+the same structural defaults used when no initial value is supplied, including
+inside list items and map values. Omitted optional fields remain absent.
+Unknown fields, invalid types, invalid tagged unions, and ambiguous untagged
+unions fail immediately. Neither successful nor failed execution mutates the
+supplied object.
 
 ## Base schema
 

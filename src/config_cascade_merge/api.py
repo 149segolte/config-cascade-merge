@@ -271,7 +271,7 @@ class MergePlan:
         return MergePlan(self.schema, (*self.overlays, *additions))
 
     def create_object(self, *, initial: Any = _UNSET) -> Any:
-        """Create a configuration, optionally starting from a complete value."""
+        """Create a configuration, optionally starting from a partial value."""
         from .engine import create_object
 
         operation_groups = tuple(overlay._operations for overlay in self.overlays)

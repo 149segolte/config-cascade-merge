@@ -42,8 +42,9 @@ def create_object(
     ``None``; maps and lists start empty. This means an operation can address a
     nested fixed field without first creating each of its parents.
 
-    A supplied initial value is copied and fully validated before any operation
-    executes.
+    A supplied initial value may be partial. It is copied, validated, and
+    recursively completed with the same empty values used when no initial
+    value is supplied before any operation executes.
 
     Test operations are handled per overlay. A failed ``drop`` test rolls back
     that overlay, ``skip`` keeps work already performed by it, ``warn`` logs and
@@ -52,9 +53,8 @@ def create_object(
     if initial is _MISSING:
         result = _empty_value(schema)
     else:
-        result = _copy_value(initial)
         try:
-            _validate_value(schema, result, ".", None, complete=True)
+            result = _materialize_initial(schema, initial, ".")
         except OverlayError as error:
             raise MergeError(
                 f"Invalid initial configuration: {error.message}",
@@ -98,6 +98,86 @@ def _empty_value(node: SchemaNode) -> Any:
         return []
     if isinstance(node, PrimitiveNode | UnionNode | TaggedUnionNode):
         return None
+    raise AssertionError(f"Unhandled schema node: {type(node).__name__}")
+
+
+def _materialize_initial(node: SchemaNode, value: Any, path: str) -> Any:
+    """Validate and recursively complete a partial initial value."""
+    if isinstance(node, PrimitiveNode):
+        _validate_value(node, value, path, None, complete=True)
+        return _copy_value(value)
+
+    if isinstance(node, ObjectNode):
+        if not isinstance(value, dict):
+            raise OverlayError(f"Data at {path!r} must be a mapping")
+        unknown = set(value) - set(node.keys)
+        if unknown:
+            raise OverlayError(
+                f"Unknown key(s) at {path!r}: "
+                f"{', '.join(sorted(map(str, unknown)))}"
+            )
+
+        result: dict[Any, Any] = {}
+        for key, child in node.keys.items():
+            if key in value:
+                child_path = f"{path}.{key}" if path != "." else f".{key}"
+                result[key] = _materialize_initial(child, value[key], child_path)
+            elif not child.optional:
+                result[key] = _empty_value(child)
+        return result
+
+    if isinstance(node, MapNode):
+        if not isinstance(value, dict):
+            raise OverlayError(f"Data at {path!r} must be a mapping")
+        result = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise OverlayError(f"Map keys at {path!r} must be strings")
+            child_path = f"{path}.{key}" if path != "." else f".{key}"
+            result[key] = _materialize_initial(node.value, item, child_path)
+        return result
+
+    if isinstance(node, ListNode):
+        if not isinstance(value, list):
+            raise OverlayError(f"Data at {path!r} must be a list")
+        return [
+            _materialize_initial(node.value, item, f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+
+    if isinstance(node, TaggedUnionNode):
+        if not isinstance(value, dict):
+            raise OverlayError(f"Data at {path!r} must be a mapping")
+        tag = value.get(node.tag_field)
+        if not isinstance(tag, str) or tag not in node.options:
+            raise OverlayError(
+                f"{path!r} requires tag {node.tag_field!r} "
+                f"with one of {tuple(node.options)}"
+            )
+        fields: dict[str, SchemaNode] = {
+            node.tag_field: PrimitiveNode("string"),
+            **node.common_keys,
+            **node.options[tag].extra_keys,
+        }
+        return _materialize_initial(ObjectNode(fields), value, path)
+
+    if isinstance(node, UnionNode):
+        matches: list[Any] = []
+        for branch in node.branches:
+            try:
+                matches.append(_materialize_initial(branch, value, path))
+            except OverlayError:
+                pass
+        if not matches:
+            raise OverlayError(
+                f"Data at {path!r} does not match any union branch"
+            )
+        if len(matches) > 1:
+            raise OverlayError(
+                f"Data at {path!r} ambiguously matches multiple union branches"
+            )
+        return matches[0]
+
     raise AssertionError(f"Unhandled schema node: {type(node).__name__}")
 
 

@@ -221,7 +221,7 @@ def _parse_operation(
             )
         parent = _resolve_path(schema, parts[:-1], path, path_location)
         if isinstance(parent, ObjectNode):
-            mode: RemoveMode = "null"
+            mode: RemoveMode = "delete" if target.optional else "null"
         elif isinstance(parent, MapNode):
             mode = "delete"
         else:
@@ -452,7 +452,11 @@ def _validate_object(
             location,
         )
     if complete:
-        missing = set(node.keys) - set(value)
+        missing = {
+            key
+            for key, child in node.keys.items()
+            if not child.optional and key not in value
+        }
         if missing:
             raise OverlayError(
                 f"Missing key(s) at {path!r}: {', '.join(sorted(missing))}",

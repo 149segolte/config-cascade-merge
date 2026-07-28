@@ -52,6 +52,51 @@ def test_schema_normalizes_compound_defaults() -> None:
     assert implicit == explicit
 
 
+def test_schema_normalizes_optional_default() -> None:
+    implicit = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {"name": {"type": "string"}},
+        }
+    )
+    explicit = Schema.from_data(
+        {
+            "type": "object",
+            "optional": False,
+            "keys": {"name": {"type": "string", "optional": False}},
+        }
+    )
+
+    assert implicit == explicit
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"type": "string", "optional": True},
+        {"type": "object", "optional": True},
+        {"type": "map", "optional": True, "value": {"type": "string"}},
+        {"type": "list", "optional": True, "value": {"type": "string"}},
+        {
+            "type": "union",
+            "optional": True,
+            "value": [{"type": "string"}, {"type": "integer"}],
+        },
+        {
+            "type": "tagged_union",
+            "optional": True,
+            "tag": {"name": "kind", "options": {"disabled": None}},
+        },
+    ],
+)
+def test_schema_accepts_optional_on_every_node_type(
+    config: Mapping[str, Any],
+) -> None:
+    assert Schema.from_data(config) != Schema.from_data(
+        {**config, "optional": False}
+    )
+
+
 def test_schema_normalizes_union_branches() -> None:
     from_data = Schema.from_data(
         {
@@ -111,6 +156,7 @@ def test_schema_normalizes_tagged_union() -> None:
             "'merge' must be one of",
         ),
         ({"type": "object", "id": ""}, "'id' must not be empty"),
+        ({"type": "string", "optional": "yes"}, "'optional' must be a boolean"),
         (
             {"type": "union", "value": [{"type": "string"}]},
             "requires at least two branches",
@@ -146,6 +192,51 @@ def test_schema_error_uses_yaml_field_location() -> None:
 
     assert str(error.value).startswith("base.yaml:4:")
     assert "Unknown type string 'unknown'" in str(error.value)
+
+
+def test_optional_error_uses_yaml_field_location() -> None:
+    with pytest.raises(SchemaError) as error:
+        Schema.from_yaml(
+            "type: object\nkeys:\n  name:\n    type: string\n    optional: 'yes'\n",
+            source="base.yaml",
+        )
+
+    assert str(error.value).startswith("base.yaml:5:")
+    assert "'optional' must be a boolean" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "type": "object",
+            "id": "name",
+            "keys": {"name": {"type": "string", "optional": True}},
+        },
+        {
+            "type": "list",
+            "id": "name",
+            "value": {
+                "type": "object",
+                "keys": {"name": {"type": "string", "optional": True}},
+            },
+        },
+        {
+            "type": "list",
+            "id": "name",
+            "value": {
+                "type": "tagged_union",
+                "keys": {"name": {"type": "string", "optional": True}},
+                "tag": {"name": "kind", "options": {"disabled": None}},
+            },
+        },
+    ],
+)
+def test_schema_rejects_optional_identity_fields(
+    config: Mapping[str, Any],
+) -> None:
+    with pytest.raises(SchemaError, match="Identity field 'name' must not be optional"):
+        Schema.from_data(config)
 
 
 def test_schema_from_yaml_rejects_empty_and_malformed_documents() -> None:

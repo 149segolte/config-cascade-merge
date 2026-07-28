@@ -45,6 +45,7 @@ class PrimitiveNode:
     """
 
     type: PRIMITIVE_TYPES
+    optional: bool = False
 
 
 @dataclass
@@ -58,6 +59,7 @@ class ObjectNode:
     keys: dict[str, SchemaNode]
     id: str | None = None
     merge_policy: MERGE_POLICIES = "append"
+    optional: bool = False
 
 
 @dataclass
@@ -67,6 +69,7 @@ class MapNode:
     value: SchemaNode
     id: str | None = None
     merge_policy: MERGE_POLICIES = "append"
+    optional: bool = False
 
 
 @dataclass
@@ -80,6 +83,7 @@ class ListNode:
     value: SchemaNode
     id: str | None = None
     merge_policy: MERGE_POLICIES = "append"
+    optional: bool = False
 
 
 @dataclass
@@ -90,6 +94,7 @@ class UnionNode:
     """
 
     branches: list[SchemaNode]
+    optional: bool = False
 
 
 @dataclass
@@ -109,6 +114,7 @@ class TaggedUnionNode:
     tag_field: str
     common_keys: dict[str, SchemaNode]  # shared by every variant
     options: dict[str, TaggedUnionBranch]  # tag value -> branch
+    optional: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +180,13 @@ def parse_schema(
             field_location(config, "type", node_loc),
         )
 
+    optional = _parse_optional(config, node_loc)
     if node_type in _VALID_PRIMITIVE_TYPES:
-        return PrimitiveNode(type=cast(PRIMITIVE_TYPES, node_type))
+        return PrimitiveNode(type=cast(PRIMITIVE_TYPES, node_type), optional=optional)
 
-    return _dispatch[cast(COMPOUND_TYPES, node_type)](config, node_loc)
+    node = _dispatch[cast(COMPOUND_TYPES, node_type)](config, node_loc)
+    node.optional = optional
+    return node
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +215,16 @@ def _parse_merge_policy(
             policy_location,
         )
     return cast(MERGE_POLICIES, policy)
+
+
+def _parse_optional(config: dict, location: SourceLocation | None) -> bool:
+    optional = config.get("optional", False)
+    if not isinstance(optional, bool):
+        raise SchemaError(
+            f"'optional' must be a boolean, got {type(optional).__name__!r}",
+            field_location(config, "optional", location),
+        )
+    return optional
 
 
 def _parse_id(config: dict, location: SourceLocation | None) -> str | None:
@@ -247,6 +266,28 @@ def _parse_keys(config: dict, location: SourceLocation | None) -> dict[str, Sche
     }
 
 
+def _identity_field_nodes(node: SchemaNode, name: str) -> list[SchemaNode]:
+    """Return schemas for a named field exposed by a mapping-shaped node."""
+    if isinstance(node, ObjectNode):
+        field = node.keys.get(name)
+        return [] if field is None else [field]
+    if isinstance(node, TaggedUnionNode):
+        fields = [node.common_keys[name]] if name in node.common_keys else []
+        fields.extend(
+            branch.extra_keys[name]
+            for branch in node.options.values()
+            if name in branch.extra_keys
+        )
+        return fields
+    if isinstance(node, UnionNode):
+        return [
+            field
+            for branch in node.branches
+            for field in _identity_field_nodes(branch, name)
+        ]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Per-type parsers
 # ---------------------------------------------------------------------------
@@ -256,6 +297,11 @@ def _parse_object(config: dict, location: SourceLocation | None) -> ObjectNode:
     merge_policy = _parse_merge_policy(config, location)
     id_field = _parse_id(config, location)
     keys = _parse_keys(config, location)
+    if id_field is not None and id_field in keys and keys[id_field].optional:
+        raise SchemaError(
+            f"Identity field {id_field!r} must not be optional",
+            field_location(config, "id", location),
+        )
     return ObjectNode(
         keys=keys,
         merge_policy=merge_policy,
@@ -289,6 +335,13 @@ def _parse_list(config: dict, location: SourceLocation | None) -> ListNode:
     if raw_value is None:
         raise SchemaError("'list' requires a 'value' schema", value_location)
     value = parse_schema(raw_value, location=value_location)
+    if id_field is not None and any(
+        field.optional for field in _identity_field_nodes(value, id_field)
+    ):
+        raise SchemaError(
+            f"Identity field {id_field!r} must not be optional",
+            field_location(config, "id", location),
+        )
 
     return ListNode(
         value=value,

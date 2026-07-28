@@ -146,6 +146,7 @@ keys:
                 type: string
             active:
                 type: boolean
+                optional: true
     packages:
         type: list
         id: name
@@ -164,16 +165,25 @@ keys:
 
 ### Schema types
 
-| Type                                           | Purpose                                    | Main fields                              |
-| ---------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
-| `string`, `integer`, `float`, `boolean`, `any` | Primitive value                            | -                                        |
-| `object`                                       | Fixed-key mapping                          | `keys`, optional `merge`, optional `id`  |
-| `map`                                          | Arbitrary-key mapping with uniform values  | `value`, optional `merge`, optional `id` |
-| `list`                                         | Ordered values with a uniform item schema  | `value`, optional `merge`, optional `id` |
-| `union`                                        | Value matching one of at least two schemas | `value` (list of schemas)                |
-| `tagged_union`                                 | Object selected by a discriminator field   | `keys`, `tag.name`, `tag.options`        |
+| Type                                           | Purpose                                    | Main fields                                          |
+| ---------------------------------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `string`, `integer`, `float`, `boolean`, `any` | Primitive value                            | optional `optional`                                  |
+| `object`                                       | Fixed-key mapping                          | `keys`, optional `merge`, `id`, and `optional`       |
+| `map`                                          | Arbitrary-key mapping with uniform values  | `value`, optional `merge`, `id`, and `optional`      |
+| `list`                                         | Ordered values with a uniform item schema  | `value`, optional `merge`, `id`, and `optional`      |
+| `union`                                        | Value matching one of at least two schemas | `value` (list of schemas), optional `optional`        |
+| `tagged_union`                                 | Object selected by a discriminator field   | `keys`, `tag.name`, `tag.options`, optional `optional` |
 
 The `merge` policy is either `append` (default) or `override`. An `id` identifies values for identity-based merging.
+
+Every schema node accepts a boolean `optional` field, which defaults to
+`false`. Complete objects and tagged unions may omit named fields marked
+optional. Empty plans do not materialize optional object fields, and `remove`
+deletes them instead of replacing them with `null`. `optional` does not allow
+an explicit `null` value. On roots, list items, map values, and union branches
+the flag is retained for structural equality but has no effect unless the node
+is later used as a named fixed field. A field used by an object or list `id`
+cannot be optional.
 
 Example tagged union:
 
@@ -233,7 +243,7 @@ operations:
 | -------- | -------------------------------------------------------------------- | --------------------------------------------- |
 | `set`    | Creates or replaces a value; data must fully match the target schema | `path`, `data`                                |
 | `merge`  | Validates a recursive merge into an object, map, or list             | `path`, `data`                                |
-| `remove` | Nulls a fixed object field or deletes a dynamic map entry            | `path`                                        |
+| `remove` | Deletes an optional fixed field or map entry; nulls a required field | `path`                                        |
 | `test`   | Checks equality before later execution                               | `path`, `data`; optional `on_fail`, `message` |
 | `clear`  | Removes all entries from a map or list                               | `path`                                        |
 

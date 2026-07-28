@@ -87,7 +87,11 @@ def create_object(
 
 def _empty_value(node: SchemaNode) -> Any:
     if isinstance(node, ObjectNode):
-        return {key: _empty_value(child) for key, child in node.keys.items()}
+        return {
+            key: _empty_value(child)
+            for key, child in node.keys.items()
+            if not child.optional
+        }
     if isinstance(node, MapNode):
         return {}
     if isinstance(node, ListNode):

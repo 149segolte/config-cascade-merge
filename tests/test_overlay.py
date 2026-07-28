@@ -273,6 +273,33 @@ def test_merge_requires_complete_override_object(schema: Schema) -> None:
         )
 
 
+def test_override_merge_allows_missing_optional_fields() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "profile": {
+                    "type": "object",
+                    "merge": "override",
+                    "keys": {
+                        "name": {"type": "string"},
+                        "active": {"type": "boolean", "optional": True},
+                    },
+                }
+            },
+        }
+    )
+
+    overlay = Overlay.from_data(
+        make_overlay(
+            {"action": "merge", "path": ".profile", "data": {"name": "Grace"}},
+        ),
+        schema,
+    )
+
+    assert overlay.operations[0].action == "merge"
+
+
 @pytest.mark.parametrize(
     ("document", "message"),
     [

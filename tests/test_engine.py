@@ -85,6 +85,111 @@ def test_empty_plan_creates_complete_schema_shaped_object(schema: Schema) -> Non
     }
 
 
+def test_optional_fields_are_omitted_and_can_be_materialized() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "required": {"type": "string"},
+                "profile": {
+                    "type": "object",
+                    "optional": True,
+                    "keys": {
+                        "name": {"type": "string"},
+                        "active": {"type": "boolean", "optional": True},
+                    },
+                },
+            },
+        }
+    )
+    empty = MergePlan(schema).create_object()
+    overlay = make_overlay(
+        schema,
+        {"action": "set", "path": ".profile.name", "data": "Ada"},
+    )
+
+    assert empty == {"required": None}
+    assert MergePlan(schema, [overlay]).create_object() == {
+        "required": None,
+        "profile": {"name": "Ada"},
+    }
+
+
+def test_remove_deletes_optional_fields_but_nulls_required_fields() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "required": {"type": "string"},
+                "nickname": {"type": "string", "optional": True},
+            },
+        }
+    )
+    overlay = make_overlay(
+        schema,
+        {"action": "remove", "path": ".nickname"},
+        {"action": "remove", "path": ".required"},
+    )
+
+    assert MergePlan(schema, [overlay]).create_object(
+        initial={"required": "Ada", "nickname": "A"}
+    ) == {"required": None}
+
+
+def test_complete_values_may_omit_optional_fields() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "merge": "override",
+            "keys": {
+                "required": {"type": "string"},
+                "nickname": {"type": "string", "optional": True},
+                "choice": {
+                    "type": "tagged_union",
+                    "optional": True,
+                    "keys": {"label": {"type": "string", "optional": True}},
+                    "tag": {
+                        "name": "kind",
+                        "options": {
+                            "file": {
+                                "path": {"type": "string"},
+                                "mode": {"type": "string", "optional": True},
+                            }
+                        },
+                    },
+                },
+            },
+        }
+    )
+    initial = {"required": "Ada"}
+    overlay = make_overlay(
+        schema,
+        {
+            "action": "set",
+            "path": ".choice",
+            "data": {"kind": "file", "path": "/tmp/example"},
+        },
+    )
+
+    assert MergePlan(schema).create_object(initial=initial) == initial
+    assert MergePlan(schema, [overlay]).create_object(initial=initial) == {
+        "required": "Ada",
+        "choice": {"kind": "file", "path": "/tmp/example"},
+    }
+
+
+def test_optional_does_not_make_null_valid() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {"nickname": {"type": "string", "optional": True}},
+        }
+    )
+
+    with pytest.raises(MergeError, match="must be string"):
+        MergePlan(schema).create_object(initial={"nickname": None})
+
+
 def test_create_object_applies_all_mutating_operations(schema: Schema) -> None:
     overlay = make_overlay(
         schema,

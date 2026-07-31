@@ -258,6 +258,33 @@ operations:
 | `test`   | Checks equality before later execution                               | `path`, `data`; optional `on_fail`, `message` |
 | `clear`  | Removes all entries from a map or list                               | `path`                                        |
 
+### References
+
+Use `!refer` in `set`, `merge`, or `test` data to copy a value from another
+part of the configuration:
+
+```yaml
+name: logged-in-user
+operations:
+    - action: set
+      path: .props.git
+      data:
+          user:
+              name: Ada
+              email: !refer .meta.logged_in.email
+```
+
+References use the same dot-path syntax as operation paths. They may appear as
+the complete `data` value or be nested inside mappings and lists. A reference
+is resolved when its operation executes, so it sees the initial configuration,
+earlier overlays, and earlier operations in the same overlay. The referenced
+value is defensively copied.
+
+Forward references are not supported. A missing path raises `MergeError`, and
+the resolved value is validated against the operation target before the
+operation runs. Dot paths can traverse objects and maps; list indexes are not
+supported.
+
 `test.on_fail` accepts:
 
 - `error` — stop execution (default)

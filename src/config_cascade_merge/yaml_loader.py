@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 from yaml.constructor import ConstructorError
-from yaml.nodes import MappingNode, SequenceNode
+from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 from yaml.resolver import BaseResolver
 
 
@@ -25,6 +25,14 @@ from yaml.resolver import BaseResolver
 class SourceLocation:
     file_name: str | None = None
     line_number: int | None = None
+
+
+@dataclass(frozen=True)
+class Refer:
+    """A deferred reference to a value in the configuration being built."""
+
+    path: str
+    location: SourceLocation | None = None
 
 
 class _MarkedDict(dict):
@@ -93,6 +101,37 @@ def _construct_sequence(loader: YamlLoader, node: SequenceNode) -> _MarkedList:
     return sequence
 
 
+def _construct_refer(loader: YamlLoader, node: ScalarNode) -> Refer:
+    if not isinstance(node, ScalarNode):
+        raise ConstructorError(
+            "while constructing a !refer",
+            node.start_mark,
+            "expected a scalar dot path",
+            node.start_mark,
+        )
+
+    path = loader.construct_scalar(node)
+    if not path.startswith("."):
+        raise ConstructorError(
+            "while constructing a !refer",
+            node.start_mark,
+            "expected a dot path such as '.meta.logged_in.email'",
+            node.start_mark,
+        )
+    if path != "." and any(not part for part in path[1:].split(".")):
+        raise ConstructorError(
+            "while constructing a !refer",
+            node.start_mark,
+            f"invalid reference path {path!r}: path segments may not be empty",
+            node.start_mark,
+        )
+
+    return Refer(
+        path,
+        SourceLocation(loader.source_file_name, node.start_mark.line + 1),
+    )
+
+
 YamlLoader.add_constructor(
     BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_mapping,
@@ -101,6 +140,7 @@ YamlLoader.add_constructor(
     BaseResolver.DEFAULT_SEQUENCE_TAG,
     _construct_sequence,
 )
+YamlLoader.add_constructor("!refer", _construct_refer)
 
 
 def load_yaml(source: str, file_name: str | Path | None = None) -> Any:

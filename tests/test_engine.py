@@ -73,6 +73,168 @@ def complete_initial() -> dict[str, Any]:
     }
 
 
+def test_references_resolve_from_current_configuration_state(
+    schema: Schema,
+) -> None:
+    initial = complete_initial()
+    initial["labels"]["existing"] = "yes"
+    overlay = Overlay.from_yaml(
+        """
+name: references
+operations:
+  - action: set
+    path: .profile.name
+    data: Ada
+  - action: set
+    path: .labels
+    data:
+      copied_name: !refer .profile.name
+      original_label: !refer .labels.existing
+  - action: test
+    path: .profile.name
+    data: !refer .labels.copied_name
+""",
+        schema,
+    )
+
+    result = MergePlan(schema, [overlay]).create_object(initial=initial)
+
+    assert result["labels"] == {
+        "copied_name": "Ada",
+        "original_label": "yes",
+    }
+
+
+def test_reference_copies_compound_values_without_aliasing() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "source": {"type": "map", "value": {"type": "string"}},
+                "copy": {"type": "map", "value": {"type": "string"}},
+            },
+        }
+    )
+    overlay = Overlay.from_yaml(
+        """
+name: copy
+operations:
+  - action: set
+    path: .copy
+    data: !refer .source
+  - action: merge
+    path: .copy
+    data:
+      secondary: !refer .source.original
+      changed: "yes"
+""",
+        schema,
+    )
+
+    result = MergePlan(schema, [overlay]).create_object(
+        initial={"source": {"original": "yes"}, "copy": {}}
+    )
+
+    assert result == {
+        "source": {"original": "yes"},
+        "copy": {
+            "original": "yes",
+            "secondary": "yes",
+            "changed": "yes",
+        },
+    }
+
+
+def test_missing_reference_reports_its_source_location(schema: Schema) -> None:
+    overlay = Overlay.from_yaml(
+        """
+name: missing
+operations:
+  - action: set
+    path: .profile.name
+    data: !refer .labels.missing
+""",
+        schema,
+        source="missing.yaml",
+    )
+
+    with pytest.raises(
+        MergeError,
+        match=r"missing\.yaml:6: Could not resolve reference "
+        r"'\.labels\.missing': path is missing for 'set' at "
+        r"'\.profile\.name' in overlay 'missing'",
+    ):
+        MergePlan(schema, [overlay]).create_object(initial=complete_initial())
+
+
+def test_incompatible_reference_is_revalidated_at_execution(schema: Schema) -> None:
+    overlay = Overlay.from_yaml(
+        """
+name: incompatible
+operations:
+  - action: set
+    path: .count
+    data: !refer .profile.name
+""",
+        schema,
+        source="incompatible.yaml",
+    )
+
+    with pytest.raises(
+        MergeError,
+        match=r"Resolved reference data.*must be integer, got str",
+    ):
+        MergePlan(schema, [overlay]).create_object(initial=complete_initial())
+
+
+def test_reference_can_select_a_tagged_union_branch() -> None:
+    schema = Schema.from_data(
+        {
+            "type": "object",
+            "keys": {
+                "selected_kind": {"type": "string"},
+                "resource": {
+                    "type": "tagged_union",
+                    "keys": {"label": {"type": "string"}},
+                    "tag": {
+                        "name": "kind",
+                        "options": {
+                            "file": {"path": {"type": "string"}},
+                            "service": {"port": {"type": "integer"}},
+                        },
+                    },
+                },
+            },
+        }
+    )
+    overlay = Overlay.from_yaml(
+        """
+name: tagged-reference
+operations:
+  - action: set
+    path: .resource
+    data:
+      kind: !refer .selected_kind
+      label: readme
+      path: README.md
+""",
+        schema,
+    )
+
+    result = MergePlan(schema, [overlay]).create_object(
+        initial={
+            "selected_kind": "file",
+            "resource": {"kind": "service", "label": "web", "port": 8080},
+        }
+    )
+
+    assert result["resource"] == {
+        "kind": "file",
+        "label": "readme",
+        "path": "README.md",
+    }
+
+
 def test_validation_can_be_disabled_for_schema_shaped_object(schema: Schema) -> None:
     plan = MergePlan(schema)
 

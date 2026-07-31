@@ -137,6 +137,35 @@ def test_test_operation_defaults_to_error_and_accepts_null(
     assert operation.on_fail == "error"
 
 
+def test_overlay_yaml_accepts_references_anywhere_in_operation_data(
+    schema: Schema,
+) -> None:
+    overlay = Overlay.from_yaml(
+        """
+name: references
+operations:
+  - action: set
+    path: .profile
+    data: !refer .strict
+  - action: merge
+    path: .profile
+    data:
+      name: !refer .strict.name
+  - action: test
+    path: .count
+    data: !refer .registry.expected
+""",
+        schema,
+        source="references.yaml",
+    )
+
+    assert [operation.action for operation in overlay.operations] == [
+        "set",
+        "merge",
+        "test",
+    ]
+
+
 @pytest.mark.parametrize(
     ("operation", "message"),
     [

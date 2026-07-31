@@ -7,6 +7,7 @@ from yaml.constructor import ConstructorError
 
 from config_cascade_merge.logging import ConfigError
 from config_cascade_merge.yaml_loader import (
+    Refer,
     SourceLocation,
     field_location,
     item_location,
@@ -43,6 +44,32 @@ def test_location_helpers_use_fallback_for_plain_python_values() -> None:
 def test_load_yaml_rejects_unhashable_mapping_keys() -> None:
     with pytest.raises(ConstructorError, match="found unhashable key"):
         load_yaml("? [one, two]\n: value\n")
+
+
+def test_load_yaml_constructs_references_with_source_location() -> None:
+    document = load_yaml(
+        "email: !refer .meta.logged_in.email\n",
+        file_name="overlay.yaml",
+    )
+
+    assert document["email"] == Refer(
+        ".meta.logged_in.email",
+        SourceLocation("overlay.yaml", 1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("value: !refer meta.email\n", "expected a dot path"),
+        ("value: !refer .meta..email\n", "path segments may not be empty"),
+        ("value: !refer [one, two]\n", "expected a scalar dot path"),
+        ("value: !refer {path: .meta.email}\n", "expected a scalar dot path"),
+    ],
+)
+def test_load_yaml_rejects_invalid_references(source: str, message: str) -> None:
+    with pytest.raises(ConstructorError, match=message):
+        load_yaml(source)
 
 
 @pytest.mark.parametrize(

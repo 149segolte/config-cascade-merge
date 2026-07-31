@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any, Callable, Sequence, cast
 
 from .logging import MergeError, OverlayError, logger
@@ -15,6 +16,7 @@ from .overlay import (
     RemoveOperation,
     SetOperation,
     TestOperation,
+    _validate_merge_value,
     _validate_value,
 )
 from .schema import (
@@ -26,6 +28,7 @@ from .schema import (
     TaggedUnionNode,
     UnionNode,
 )
+from .yaml_loader import Refer, SourceLocation
 
 _MISSING = object()
 
@@ -68,23 +71,28 @@ def create_object(
     for operations in operation_groups:
         before_overlay = deepcopy(result)
         for operation in operations:
-            if isinstance(operation, TestOperation):
-                actual = _read_path(result, operation.path)
-                if actual is not _MISSING and actual == operation.data:
+            resolved_operation = _resolve_operation_references(
+                schema, result, operation
+            )
+            if isinstance(resolved_operation, TestOperation):
+                actual = _read_path(result, resolved_operation.path)
+                if actual is not _MISSING and actual == resolved_operation.data:
                     continue
 
-                message = operation.message or _test_failure_message(operation, actual)
-                if operation.on_fail == "warn":
+                message = resolved_operation.message or _test_failure_message(
+                    resolved_operation, actual
+                )
+                if resolved_operation.on_fail == "warn":
                     logger.warning(message)
                     continue
-                if operation.on_fail == "skip":
+                if resolved_operation.on_fail == "skip":
                     break
-                if operation.on_fail == "drop":
+                if resolved_operation.on_fail == "drop":
                     result = before_overlay
                     break
                 raise MergeError(message)
 
-            result = _apply_operation(schema, result, operation)
+            result = _apply_operation(schema, result, resolved_operation)
 
     if validate:
         try:
@@ -227,6 +235,103 @@ def _read_path(root: Any, path: str) -> Any:
             return _MISSING
         current = current[part]
     return current
+
+
+def _resolve_operation_references(
+    schema: SchemaNode,
+    root: Any,
+    operation: Operation,
+) -> Operation:
+    if not isinstance(operation, SetOperation | MergeOperation | TestOperation):
+        return operation
+    if not _contains_reference(operation.data):
+        return operation
+
+    try:
+        resolved, location = _resolve_references(operation.data, root)
+    except MergeError as error:
+        raise MergeError(
+            f"{error.message} for {operation.action!r} at {operation.path!r} "
+            f"in overlay {operation.overlay!r}",
+            error.location,
+        ) from error
+
+    target = _schema_at_path(schema, operation.path)
+    try:
+        if isinstance(operation, MergeOperation):
+            _validate_merge_value(
+                target, resolved, operation.path, location
+            )
+        elif not isinstance(operation, TestOperation) or resolved is not None:
+            _validate_value(
+                target,
+                resolved,
+                operation.path,
+                location,
+                complete=True,
+            )
+    except OverlayError as error:
+        raise MergeError(
+            f"Resolved reference data for {operation.action!r} at "
+            f"{operation.path!r} in overlay {operation.overlay!r} is invalid: "
+            f"{error.message}",
+            error.location,
+        ) from error
+
+    return replace(operation, data=resolved)
+
+
+def _contains_reference(value: Any) -> bool:
+    if isinstance(value, Refer):
+        return True
+    if isinstance(value, dict):
+        return any(_contains_reference(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_reference(item) for item in value)
+    return False
+
+
+def _resolve_references(
+    value: Any,
+    root: Any,
+) -> tuple[Any, SourceLocation | None]:
+    if isinstance(value, Refer):
+        resolved = _read_path(root, value.path)
+        if resolved is _MISSING:
+            raise MergeError(
+                f"Could not resolve reference {value.path!r}: path is missing",
+                value.location,
+            )
+        return _copy_value(resolved), value.location
+
+    if isinstance(value, dict):
+        result = {}
+        location = None
+        for key, item in value.items():
+            resolved, item_location = _resolve_references(item, root)
+            result[key] = resolved
+            if location is None:
+                location = item_location
+        return result, location
+
+    if isinstance(value, list):
+        result = []
+        location = None
+        for item in value:
+            resolved, item_location = _resolve_references(item, root)
+            result.append(resolved)
+            if location is None:
+                location = item_location
+        return result, location
+
+    return deepcopy(value), None
+
+
+def _schema_at_path(schema: SchemaNode, path: str) -> SchemaNode:
+    node = schema
+    for part in _path_parts(path):
+        node = _child_schema(node, part)
+    return node
 
 
 def _write_path(schema: SchemaNode, root: Any, path: str, value: Any) -> Any:

@@ -39,6 +39,7 @@ from .schema import (
     UnionNode,
 )
 from .yaml_loader import (
+    Refer,
     SourceLocation,
     field_location,
     item_location,
@@ -352,6 +353,8 @@ def _validate_merge_value(
     location: SourceLocation | None,
 ) -> None:
     """Validate a recursive merge payload according to node merge policies."""
+    if isinstance(value, Refer):
+        return
     if isinstance(node, ObjectNode):
         _validate_object(
             node,
@@ -386,6 +389,8 @@ def _validate_value(
     *,
     complete: bool,
 ) -> None:
+    if isinstance(value, Refer):
+        return
     if isinstance(node, PrimitiveNode):
         valid = {
             "string": lambda item: isinstance(item, str),
@@ -501,6 +506,10 @@ def _validate_tagged_union(
     if not isinstance(value, dict):
         raise OverlayError(f"Data at {path!r} must be a mapping", location)
     tag = value.get(node.tag_field)
+    # A referenced discriminator determines both the tag and the valid extra
+    # fields, so validation of the complete union must wait for execution.
+    if isinstance(tag, Refer):
+        return
     if not isinstance(tag, str) or tag not in node.options:
         raise OverlayError(
             f"{path!r} requires tag {node.tag_field!r} with one of {tuple(node.options)}",
